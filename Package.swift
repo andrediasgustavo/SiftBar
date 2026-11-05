@@ -13,6 +13,11 @@ let package = Package(
         .executableTarget(
             name: "SiftBar",
             path: "Sources/SiftBar"
+        ),
+        .testTarget(
+            name: "SiftBarTests",
+            dependencies: ["SiftBar"],
+            path: "Tests/SiftBarTests"
         )
     ]
 )

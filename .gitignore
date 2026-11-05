@@ -1,6 +1,38 @@
+# macOS
 .DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Swift Package Manager
 .build/
 .swiftpm/
-dist/
+
+# Xcode
 *.xcodeproj
+*.xcworkspace
 xcuserdata/
+DerivedData/
+
+# Build output
+dist/
+*.app
+
+# Tests and coverage
+*.xctest
+*.profraw
+*.profdata
+coverage/
+.coverage
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example

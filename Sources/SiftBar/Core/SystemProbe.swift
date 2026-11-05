@@ -19,7 +19,7 @@ enum SystemProbe {
         return SystemSnapshot(totalMemoryBytes: totalMemory, freeDiskBytes: freeDisk)
     }
 
-    private static func parseFreeDisk(from output: String) throws -> Int64 {
+    static func parseFreeDisk(from output: String) throws -> Int64 {
         let lines = output.split(separator: "\n")
         guard lines.count >= 2 else {
             throw ProbeError.unexpectedOutput("df")
