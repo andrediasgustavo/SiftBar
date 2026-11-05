@@ -10,8 +10,26 @@ struct SiftBarApp: App {
             MenuContentView()
                 .environmentObject(appState)
         } label: {
-            Label("SiftBar", systemImage: "waveform.path.ecg")
+            Label(menuBarTitle, systemImage: menuBarSymbol)
         }
+    }
+
+    private var menuBarTitle: String {
+        guard let report = appState.report else { return "SiftBar" }
+
+        let review = report.items.filter { $0.risk != .safe }.count
+        return review == 0 ? "SiftBar · all clear" : "SiftBar · \(review) need review"
+    }
+
+    private var menuBarSymbol: String {
+        if appState.isScanning { return "arrow.triangle.2.circlepath" }
+
+        if let report = appState.report,
+           report.items.contains(where: { $0.risk == .dangerous }) {
+            return "exclamationmark.triangle.fill"
+        }
+
+        return "waveform.path.ecg"
     }
 }
 

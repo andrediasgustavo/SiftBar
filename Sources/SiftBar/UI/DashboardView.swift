@@ -1,229 +1,430 @@
+import AppKit
 import SwiftUI
 
 struct DashboardView: View {
     @EnvironmentObject private var appState: AppState
+    @StateObject private var page = ReviewPageModel()
     @StateObject private var filter = ReviewFilterModel()
+    @StateObject private var actions = ReviewActionModel()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            header
-            metrics
-            analysisPanel
+        HStack(spacing: 0) {
+            sidebar
+                .frame(width: 210)
 
-            if let report = appState.report {
-                filterBar(report)
-                reviewHeader(report)
+            Divider()
 
-                if filteredItems.isEmpty {
-                    noResultsState
-                } else {
-                    itemList(filteredItems)
+            detail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(minWidth: 900, minHeight: 600)
+        .sheet(isPresented: $actions.isConfirming) {
+            ActionConfirmationView(
+                items: actions.pending,
+                isRunning: actions.isRunning,
+                onCancel: { actions.cancelConfirmation() },
+                onConfirm: { confirmActions() }
+            )
+        }
+        .onChange(of: page.category) { _ in
+            actions.clear()
+        }
+    }
+
+    // MARK: - Sidebar
+
+    private var sidebar: some View {
+        VStack(spacing: 0) {
+            List(selection: $page.selection) {
+                Label("Overview", systemImage: "square.grid.2x2")
+                    .badge(badge(allItems.count))
+                    .tag(ReviewPage.overview)
+                    .contentShape(Rectangle())
+                    .onTapGesture { page.selection = .overview }
+
+                Section("Review") {
+                    ForEach(Self.reviewOrder, id: \.rawValue) { category in
+                        Label(category.title, systemImage: category.symbol)
+                            .badge(badge(count(of: category)))
+                            .tag(ReviewPage.category(category))
+                            .contentShape(Rectangle())
+                            .onTapGesture { page.selection = .category(category) }
+                    }
                 }
+            }
+            .listStyle(.sidebar)
+
+            Divider()
+
+            HStack(spacing: 6) {
+                Image(systemName: "lock.shield")
+                    .accessibilityHidden(true)
+
+                Text("Read-only by default")
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+        }
+    }
+
+    /// Startup and process cleanup are the product's job, so they lead. Memory
+    /// and disk stay available as context, not as the first thing to read.
+    private static let reviewOrder: [ItemCategory] = [
+        .startup, .processes, .services, .caches, .leftovers, .memory, .disk
+    ]
+
+    private func badge(_ count: Int) -> Text? {
+        count > 0 ? Text("\(count)") : nil
+    }
+
+    // MARK: - Detail
+
+    private var detail: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            pageHeader
+                .padding(.horizontal, 24)
+
+            if appState.report != nil {
+                statStrip
+                    .padding(.horizontal, 24)
+                    .padding(.top, 14)
+            }
+
+            if !actions.reports.isEmpty {
+                resultCard
+                    .padding(.horizontal, 24)
+                    .padding(.top, 12)
+            }
+
+            if appState.report != nil {
+                filterRow
+                    .padding(.horizontal, 24)
+
+                content
+                    .padding(.horizontal, 24)
+
+                actionBar
             } else {
                 emptyState
+                    .padding(.horizontal, 24)
+                    .padding(.top, 18)
+
+                Spacer(minLength: 0)
             }
-
-            footer
         }
-        .padding(24)
-        .frame(minWidth: 700, minHeight: 560)
+        .padding(.top, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .animation(
+            reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.85),
+            value: actions.reports.count
+        )
     }
 
-    private var filteredItems: [ScanItem] {
-        guard let report = appState.report else { return [] }
-        return filter.apply(to: report.items)
-    }
+    private var pageHeader: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .center, spacing: 12) {
+                Text(pageTitle)
+                    .font(.largeTitle.weight(.semibold))
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 10) {
-                Image(systemName: "waveform.path.ecg")
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(.tint)
+                Spacer(minLength: 12)
 
-                Text("SiftBar")
-                    .font(.system(size: 26, weight: .bold, design: .rounded))
-            }
-
-            Text("Analyze first. Change only what you choose.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var metrics: some View {
-        HStack(spacing: 12) {
-            MetricCard(
-                title: "Memory",
-                value: formattedMemoryUsed,
-                subtitle: memorySubtitle
-            )
-            MetricCard(
-                title: "Disk Free",
-                value: formattedDiskFree,
-                subtitle: diskSubtitle
-            )
-            MetricCard(
-                title: "Items",
-                value: appState.report.map { "\($0.items.count)" } ?? "—",
-                subtitle: itemsSubtitle
-            )
-        }
-    }
-
-    private var analysisPanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
                 Button {
                     Task { await appState.analyze() }
                 } label: {
-                    Label(appState.isScanning ? "Analyzing..." : "Analyze", systemImage: "magnifyingglass")
+                    Label(appState.isScanning ? "Analyzing…" : "Analyze", systemImage: "magnifyingglass")
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(appState.isScanning)
-
-                if appState.isScanning {
-                    ProgressView()
-                        .controlSize(.small)
-                }
-
-                Spacer()
-
-                if appState.report != nil {
-                    Button("Clear") {
-                        filter.reset()
-                        appState.clearReport()
-                    }
-                    .buttonStyle(.link)
-                }
             }
 
-            Text(appState.errorMessage ?? appState.status)
-                .font(.caption)
-                .foregroundStyle(appState.errorMessage == nil ? Color.secondary : Color.red)
+            Text(pageDescription)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if appState.isScanning || appState.errorMessage != nil {
+                HStack(spacing: 5) {
+                    if appState.isScanning {
+                        ProgressView()
+                            .controlSize(.mini)
+                    }
+
+                    Text(appState.errorMessage ?? appState.status)
+                        .font(.caption)
+                        .foregroundStyle(appState.errorMessage == nil ? Color.secondary : Color.red)
+                        .lineLimit(1)
+                }
+                .padding(.top, 1)
+            }
         }
-        .padding(16)
-        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
     }
 
-    private func filterBar(_ report: ScanReport) -> some View {
+    private var filterRow: some View {
         HStack(spacing: 10) {
-            HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                TextField("Search items", text: $filter.searchText)
-                    .textFieldStyle(.plain)
-                    .font(.callout)
-
-                if !filter.searchText.isEmpty {
-                    Button {
-                        filter.searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .frame(width: 220)
-            .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 7))
-
-            Picker("Category", selection: $filter.category) {
-                Text("All categories").tag(ItemCategory?.none)
-
-                ForEach(ItemCategory.allCases.sorted { $0.sortOrder < $1.sortOrder }, id: \.rawValue) { category in
-                    let count = ReviewFilter.count(of: category, in: report.items)
-                    if count > 0 {
-                        Text("\(category.title) (\(count))").tag(ItemCategory?.some(category))
-                    }
-                }
-            }
-            .labelsHidden()
-            .frame(width: 160)
+            SearchField(text: $filter.searchText, placeholder: "Search")
+                .frame(width: 240, height: 22)
 
             Picker("Risk", selection: $filter.risk) {
                 Text("All risks").tag(Risk?.none)
 
                 ForEach(Risk.allCases, id: \.rawValue) { risk in
-                    let count = ReviewFilter.count(of: risk, in: report.items)
-                    if count > 0 {
-                        Text("\(risk.label) (\(count))").tag(Risk?.some(risk))
-                    }
+                    Text("\(risk.label) (\(count(of: risk)))").tag(Risk?.some(risk))
                 }
             }
             .labelsHidden()
-            .frame(width: 130)
+            .frame(width: 135)
+
+            Menu("Select") {
+                Button("None") { actions.clear() }
+                Button("All Changeable") { actions.selectAll(filteredItems) }
+                Button("Needs Review") { actions.selectNeedingReview(filteredItems) }
+            }
+            .frame(width: 80)
 
             Spacer(minLength: 0)
 
             if filter.isActive {
-                Button("Reset") {
-                    filter.reset()
-                }
-                .buttonStyle(.link)
+                Button("Reset") { filter.reset() }
+                    .buttonStyle(.link)
             }
         }
-        .padding(10)
-        .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 10))
+        .padding(.top, 12)
+        .padding(.bottom, 8)
     }
 
-    private func reviewHeader(_ report: ScanReport) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text("Review")
-                .font(.headline)
+    @ViewBuilder
+    private var content: some View {
+        if let report = appState.report {
+            let items = visibleItems(in: report)
 
-            Text(
-                filter.isActive
-                    ? "Showing \(filteredItems.count) of \(report.items.count)"
-                    : "Read-only results"
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            if items.isEmpty {
+                noResultsState
+            } else {
+                itemList(items)
+            }
+        } else {
+            emptyState
+                .padding(.top, 18)
 
-            Spacer()
-
-            Text(report.generatedAt.formatted(date: .omitted, time: .standard))
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
         }
     }
 
     private func itemList(_ items: [ScanItem]) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                ForEach(sections(from: items)) { section in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label(
-                            "\(section.category.title) · \(section.items.count)",
-                            systemImage: section.category.symbol
-                        )
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.secondary)
-
-                        ForEach(section.items) { item in
-                            ItemRow(item: item)
-                        }
-                    }
-                }
+            LazyVStack(alignment: .leading, spacing: 0) {
+                rows(sortedForReview(items))
             }
-            .padding(.vertical, 2)
+            .padding(.bottom, 4)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxHeight: .infinity)
     }
 
-    private func sections(from items: [ScanItem]) -> [CategorySection] {
-        ItemCategory.allCases
-            .sorted { $0.sortOrder < $1.sortOrder }
-            .compactMap { category -> CategorySection? in
-                let categoryItems = items.filter { $0.category == category }
-                guard !categoryItems.isEmpty else { return nil }
-                return CategorySection(category: category, items: categoryItems)
+    @ViewBuilder
+    private func rows(_ items: [ScanItem]) -> some View {
+        let showsCategory = page.category == nil
+
+        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+            ItemRow(
+                item: item,
+                isSelected: actions.isSelected(item),
+                canSelect: item.canBeChanged,
+                showsCategory: showsCategory,
+                onToggle: { actions.toggle(item) }
+            )
+
+            if index < items.count - 1 {
+                Hairline()
+                    .padding(.leading, showsCategory ? 130 : 108)
             }
+        }
+    }
+
+    private func sortedForReview(_ items: [ScanItem]) -> [ScanItem] {
+        items.sorted { lhs, rhs in
+            if lhs.risk.sortRank != rhs.risk.sortRank {
+                return lhs.risk.sortRank < rhs.risk.sortRank
+            }
+
+            let left = lhs.impactBytes ?? -1
+            let right = rhs.impactBytes ?? -1
+            if left != right { return left > right }
+
+            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+        }
+    }
+
+    @ViewBuilder
+    private var actionBar: some View {
+        if let report = appState.report {
+            let items = visibleItems(in: report)
+            let changeable = items.filter(\.canBeChanged)
+            let selected = items.filter { actions.isSelected($0) }
+
+            if !changeable.isEmpty {
+                HStack(spacing: 12) {
+                    if actions.isRunning {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+
+                    Text(selected.isEmpty
+                         ? "\(changeable.count) \(changeable.count == 1 ? "item" : "items") can be changed"
+                         : "\(selected.count) of \(changeable.count) selected")
+                        .font(.callout)
+                        .foregroundStyle(selected.isEmpty ? Color.secondary : Color.primary)
+
+                    Spacer(minLength: 8)
+
+                    if !selected.isEmpty {
+                        Button("Deselect") { actions.clear() }
+                            .buttonStyle(.link)
+
+                        Button(ActionExecutor.title(for: selected)) {
+                            actions.beginConfirmation(with: selected)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(actions.isRunning)
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 10)
+                .background(.regularMaterial)
+                .overlay(alignment: .top) { Hairline() }
+            }
+        }
+    }
+
+    // MARK: - Stats
+
+    private var statStrip: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(stats.enumerated()), id: \.offset) { index, stat in
+                if index > 0 {
+                    Rectangle()
+                        .fill(Color(nsColor: .separatorColor))
+                        .frame(width: 1, height: 32)
+                        .padding(.horizontal, 14)
+                }
+
+                StatBlock(stat: stat)
+            }
+        }
+        .padding(.vertical, 10)
+        .overlay(alignment: .top) { Hairline() }
+        .overlay(alignment: .bottom) { Hairline() }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var stats: [Stat] {
+        guard let report = appState.report else { return [] }
+
+        let dangerous = report.items.filter { $0.risk == .dangerous }.count
+        let caution = report.items.filter { $0.risk == .caution }.count
+        let review = dangerous + caution
+        let reclaimable = report.items
+            .filter(\.canBeChanged)
+            .compactMap(\.impactBytes)
+            .reduce(0, +)
+
+        let reviewTint: Color = dangerous > 0 ? .red : (caution > 0 ? .orange : .green)
+        let memoryTint: Color
+        switch report.memory.pressure {
+        case .critical: memoryTint = .red
+        case .warning: memoryTint = .orange
+        case .normal: memoryTint = .primary
+        }
+
+        let usedRatio = Double(report.disk.usedBytes) / Double(max(report.disk.totalBytes, 1))
+        let diskTint: Color = usedRatio >= 0.90 ? .red : (usedRatio >= 0.80 ? .orange : .primary)
+
+        let swap: String = report.memory.swapUsedBytes > 0
+            ? " · swap \(formatMemory(report.memory.swapUsedBytes))"
+            : " · no swap"
+
+        return [
+            Stat(
+                value: "\(report.items.count)",
+                label: "Findings",
+                tint: .primary,
+                help: "\(report.items.count) items found in this scan."
+            ),
+            Stat(
+                value: "\(review)",
+                label: "Need review",
+                tint: reviewTint,
+                help: "\(dangerous) dangerous · \(caution) caution"
+            ),
+            Stat(
+                value: format(reclaimable),
+                label: "Reclaimable",
+                tint: reclaimable > 0 ? .green : .secondary,
+                help: "Space and memory the changeable items can release."
+            ),
+            Stat(
+                value: formatMemory(report.memory.usedBytes),
+                label: "Memory used",
+                tint: memoryTint,
+                help: "\(formatMemory(report.memory.usedBytes)) of \(formatMemory(report.memory.totalBytes)) used\(swap)"
+            ),
+            Stat(
+                value: format(report.disk.freeBytes),
+                label: "Disk free",
+                tint: diskTint,
+                help: "\(format(report.disk.freeBytes)) free · \(Int(usedRatio * 100))% used"
+            )
+        ]
+    }
+
+    // MARK: - Result
+
+    private var resultCard: some View {
+        let tint: Color = actions.failedCount > 0 ? .orange : .green
+        let symbol = actions.failedCount > 0 ? "exclamationmark.triangle.fill" : "checkmark.circle.fill"
+
+        let headline: String
+        if actions.failedCount > 0 {
+            headline = "\(actions.changedCount) of \(actions.reports.count) completed"
+        } else if actions.reclaimedBytes > 0 {
+            headline = "\(format(actions.reclaimedBytes)) freed"
+        } else {
+            headline = "\(actions.changedCount) \(actions.changedCount == 1 ? "item" : "items") changed"
+        }
+
+        return HStack(spacing: 14) {
+            Image(systemName: symbol)
+                .font(.system(size: 26))
+                .foregroundStyle(tint)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(headline)
+                    .font(.title3.weight(.semibold))
+                    .monospacedDigit()
+
+                Text("\(actions.changedCount) succeeded · \(actions.failedCount) failed")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 8)
+
+            Button("Dismiss") { actions.dismissSummary() }
+                .buttonStyle(.link)
+        }
+        .padding(14)
+        .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(tint.opacity(0.30), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .transition(reduceMotion ? .opacity : .scale(scale: 0.96).combined(with: .opacity))
     }
 
     private var noResultsState: some View {
@@ -231,6 +432,7 @@ struct DashboardView: View {
             Image(systemName: "line.3.horizontal.decrease.circle")
                 .font(.system(size: 28))
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
 
             Text("No items match")
                 .font(.callout.weight(.medium))
@@ -239,101 +441,186 @@ struct DashboardView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            Button("Reset filters") {
-                filter.reset()
-            }
-            .buttonStyle(.link)
+            Button("Reset filters") { filter.reset() }
+                .buttonStyle(.link)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("No scan yet")
-                .font(.callout.weight(.medium))
+                .font(.title3.weight(.semibold))
+
             Text("Run Analyze to inspect memory, processes, startup items, services, disk, caches and leftovers. Nothing is modified.")
-                .font(.caption)
+                .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 520, alignment: .leading)
         }
-        .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.2), in: RoundedRectangle(cornerRadius: 12))
     }
 
-    private var footer: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "lock.shield")
-            Text("Read-only by default. Nothing is changed without confirmation.")
+    // MARK: - Copy
+
+    private var pageTitle: String {
+        guard let category = page.category else { return "Overview" }
+
+        switch category {
+        case .memory: return "Memory"
+        case .processes: return "Processes"
+        case .startup: return "Startup & Login"
+        case .services: return "Services"
+        case .disk: return "Disk"
+        case .caches: return "Caches"
+        case .leftovers: return "Leftovers"
         }
-        .font(.caption)
-        .foregroundStyle(.secondary)
     }
 
-    private var formattedMemoryUsed: String {
-        guard let report = appState.report else { return "—" }
-        return ByteCountFormatter.string(fromByteCount: Int64(report.memory.usedBytes), countStyle: .memory)
-    }
-
-    private var formattedDiskFree: String {
-        guard let report = appState.report else { return "—" }
-        return ByteCountFormatter.string(fromByteCount: report.disk.freeBytes, countStyle: .file)
-    }
-
-    private var memorySubtitle: String {
-        guard let report = appState.report else { return "Physical RAM" }
-        let total = ByteCountFormatter.string(fromByteCount: Int64(report.memory.totalBytes), countStyle: .memory)
-        guard report.memory.swapUsedBytes > 0 else {
-            return "of \(total) · no swap"
+    private var pageDescription: String {
+        guard let category = page.category else {
+            return "Everything SiftBar found. Nothing changes until you choose it."
         }
-        let swap = ByteCountFormatter.string(fromByteCount: Int64(report.memory.swapUsedBytes), countStyle: .memory)
-        return "of \(total) · swap \(swap)"
+
+        switch category {
+        case .memory: return "How the system is using memory right now."
+        case .processes: return "Heavy processes running now. Quit what you do not need."
+        case .startup: return "Apps and agents that start automatically. Disable what you do not recognize."
+        case .services: return "Homebrew services that start or run in the background."
+        case .disk: return "Space used on the startup volume."
+        case .caches: return "Recreatable data. Moving it to the Trash slows the next run but keeps your files."
+        case .leftovers: return "Application Support folders with no matching app. Review before deleting."
+        }
     }
 
-    private var diskSubtitle: String {
-        guard let report = appState.report else { return "Startup volume" }
-        let used = ByteCountFormatter.string(fromByteCount: report.disk.usedBytes, countStyle: .file)
-        let total = ByteCountFormatter.string(fromByteCount: report.disk.totalBytes, countStyle: .file)
-        return "\(used) used of \(total)"
+    // MARK: - Data
+
+    private var allItems: [ScanItem] {
+        appState.report?.items ?? []
     }
 
-    private var itemsSubtitle: String {
-        if appState.isScanning { return "Scanning..." }
-        guard let duration = appState.lastDuration else { return "Not scanned" }
-        return String(format: "in %.1f s", duration)
+    private var filteredItems: [ScanItem] {
+        filter.apply(to: categoryItems(page.category, in: allItems))
+    }
+
+    private func visibleItems(in report: ScanReport) -> [ScanItem] {
+        filter.apply(to: categoryItems(page.category, in: report.items))
+    }
+
+    private func categoryItems(_ category: ItemCategory?, in items: [ScanItem]) -> [ScanItem] {
+        guard let category else { return items }
+        return items.filter { $0.category == category }
+    }
+
+    private func count(of category: ItemCategory) -> Int {
+        allItems.filter { $0.category == category }.count
+    }
+
+    private func count(of risk: Risk) -> Int {
+        // The risk picker must show counts for every risk, so ignore the
+        // currently selected risk while computing them.
+        var base = filter.current
+        base.risk = nil
+
+        return base
+            .apply(to: categoryItems(page.category, in: allItems))
+            .filter { $0.risk == risk }
+            .count
+    }
+
+    private func format(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+
+    private func formatMemory(_ bytes: UInt64) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory)
+    }
+
+    private func confirmActions() {
+        Task {
+            await actions.run()
+            await appState.analyze()
+        }
     }
 }
 
-private struct CategorySection: Identifiable {
-    let category: ItemCategory
-    let items: [ScanItem]
-
-    var id: String { category.rawValue }
-}
-
-private struct MetricCard: View {
-    let title: String
+private struct Stat {
     let value: String
-    let subtitle: String
+    let label: String
+    let tint: Color
+    let help: String
+}
+
+private struct StatBlock: View {
+    let stat: Stat
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title.uppercased())
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            Text(value)
-                .font(.system(size: 22, weight: .semibold, design: .rounded))
+        VStack(alignment: .leading, spacing: 1) {
+            Text(stat.value)
+                .font(.title.weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(stat.tint)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
 
-            Text(subtitle)
+            Text(stat.label)
                 .font(.caption)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
-        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 12))
+        .help(stat.help)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(stat.label): \(stat.value). \(stat.help)")
+    }
+}
+
+private struct Hairline: View {
+    var body: some View {
+        Rectangle()
+            .fill(Color(nsColor: .separatorColor))
+            .frame(height: 1)
+    }
+}
+
+/// Native search field: gives the standard magnifier, clear button, focus ring
+/// and Escape behavior that a styled `TextField` only imitates.
+private struct SearchField: NSViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+
+    func makeNSView(context: Context) -> NSSearchField {
+        let field = NSSearchField()
+        field.placeholderString = placeholder
+        field.controlSize = .regular
+        field.sendsSearchStringImmediately = true
+        field.delegate = context.coordinator
+        field.setAccessibilityLabel(placeholder)
+        return field
+    }
+
+    func updateNSView(_ field: NSSearchField, context: Context) {
+        context.coordinator.text = $text
+
+        if field.stringValue != text {
+            field.stringValue = text
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    final class Coordinator: NSObject, NSSearchFieldDelegate {
+        var text: Binding<String>
+
+        init(text: Binding<String>) {
+            self.text = text
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSSearchField else { return }
+            text.wrappedValue = field.stringValue
+        }
     }
 }

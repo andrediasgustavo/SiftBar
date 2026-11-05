@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 struct StartupCollector: Collector {
@@ -9,7 +10,9 @@ struct StartupCollector: Collector {
     func collect() async -> [ScanItem] {
         var items: [ScanItem] = []
         items.append(contentsOf: await failingItems())
-        items.append(contentsOf: Self.launchItems(in: Self.defaultDirectories()))
+
+        let disabled = await Self.disabledLabels()
+        items.append(contentsOf: Self.launchItems(in: Self.defaultDirectories(), disabled: disabled))
         return items
     }
 
@@ -70,10 +73,38 @@ struct StartupCollector: Collector {
         return items
     }
 
+    /// Labels the user already disabled. Without this, a disabled launch item
+    /// would keep showing up because its plist still exists on disk.
+    private static func disabledLabels() async -> Set<String> {
+        guard let result = try? await CommandRunner.run(
+            "/bin/launchctl",
+            arguments: ["print-disabled", "gui/\(getuid())"],
+            timeout: 10
+        ), result.exitCode == 0 else { return [] }
+
+        return parseDisabledLabels(result.stdout)
+    }
+
+    static func parseDisabledLabels(_ output: String) -> Set<String> {
+        var labels = Set<String>()
+
+        for line in output.split(separator: "\n") {
+            let parts = line
+                .split(separator: "=>", maxSplits: 1, omittingEmptySubsequences: true)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+
+            guard parts.count == 2, parts[1].hasPrefix("disabled") else { continue }
+            labels.insert(parts[0].trimmingCharacters(in: CharacterSet(charactersIn: "\"")))
+        }
+
+        return labels
+    }
+
     /// Lists third-party launch agents and daemons found in the given folders.
     static func launchItems(
         in directories: [String],
         limit: Int = launchItemLimit,
+        disabled: Set<String> = [],
         fileManager: FileManager = .default
     ) -> [ScanItem] {
         var items: [ScanItem] = []
@@ -85,6 +116,7 @@ struct StartupCollector: Collector {
             for file in files.sorted() where file.hasSuffix(".plist") {
                 let label = String(file.dropLast(".plist".count))
                 guard !label.hasPrefix("com.apple.") else { continue }
+                guard !disabled.contains(label) else { continue }
                 guard seen.insert(label).inserted else { continue }
 
                 items.append(ScanItem(

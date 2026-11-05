@@ -123,6 +123,49 @@ final class StartupCollectorTests: XCTestCase {
         )
     }
 
+    func testParseDisabledLabels() {
+        let output = """
+        disabled services = {
+            "com.example.one" => disabled
+            "com.example.two" => enabled
+            "com.example.three" => disabled
+        }
+        """
+
+        XCTAssertEqual(
+            StartupCollector.parseDisabledLabels(output),
+            ["com.example.one", "com.example.three"]
+        )
+    }
+
+    func testLaunchItemsSkipDisabledLabels() throws {
+        let directory = try makeTemporaryDirectory()
+        try writeFile(named: "com.example.keep.plist", in: directory)
+        try writeFile(named: "com.example.disabled.plist", in: directory)
+
+        let items = StartupCollector.launchItems(
+            in: [directory.path],
+            disabled: ["com.example.disabled"]
+        )
+
+        XCTAssertEqual(items.map(\.title), ["Launch item: com.example.keep"])
+    }
+
+    func testParseDisabledLabelsIgnoresMalformedLines() {
+        let output = """
+        disabled services = {
+            com.example.no-arrow
+            "com.example.enabled" => enabled
+            "com.example.disabled" => disabled
+        }
+        """
+
+        XCTAssertEqual(
+            StartupCollector.parseDisabledLabels(output),
+            ["com.example.disabled"]
+        )
+    }
+
     // MARK: - Helpers
 
     private func makeTemporaryDirectory() throws -> URL {
