@@ -21,9 +21,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Menu bar only: no Dock icon, no main window at launch.
         NSApp.setActivationPolicy(.accessory)
 
-        // Development hook: `open SiftBar.app --args --show-dashboard`.
+        // Development hooks:
+        //   open SiftBar.app --args --show-dashboard
+        //   open SiftBar.app --args --show-dashboard --analyze
         if CommandLine.arguments.contains("--show-dashboard") {
             DashboardWindowController.shared.show(state: AppState.shared)
+
+            if CommandLine.arguments.contains("--analyze") {
+                Task { await AppState.shared.analyze() }
+            }
         }
     }
 }

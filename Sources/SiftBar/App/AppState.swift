@@ -7,8 +7,9 @@ final class AppState: ObservableObject {
 
     @Published private(set) var isScanning = false
     @Published private(set) var status = "Ready to analyze."
-    @Published private(set) var snapshot: SystemSnapshot?
+    @Published private(set) var report: ScanReport?
     @Published private(set) var errorMessage: String?
+    @Published private(set) var lastDuration: TimeInterval?
 
     private init() {}
 
@@ -17,15 +18,21 @@ final class AppState: ObservableObject {
 
         isScanning = true
         errorMessage = nil
-        status = "Collecting system snapshot..."
+        status = "Scanning memory, processes, startup items, services, disk, caches and leftovers..."
         defer { isScanning = false }
 
-        do {
-            snapshot = try await SystemProbe.snapshot()
-            status = "Phase 0 preview complete. Full analysis arrives in Phase 1."
-        } catch {
-            errorMessage = error.localizedDescription
-            status = "Analysis failed."
-        }
+        let startedAt = Date()
+        let result = await ScanCoordinator.run()
+
+        report = result
+        lastDuration = Date().timeIntervalSince(startedAt)
+        status = "Found \(result.items.count) items. Nothing has been changed."
+    }
+
+    func clearReport() {
+        report = nil
+        lastDuration = nil
+        status = "Ready to analyze."
+        errorMessage = nil
     }
 }

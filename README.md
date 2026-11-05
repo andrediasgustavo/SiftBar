@@ -6,7 +6,7 @@
 A macOS menu bar app that **analyzes your system, explains what it finds, and
 lets you choose what to clean up** — nothing runs without confirmation.
 
-> **Status:** Phase 0 — app skeleton, read-only system probe, and build/test
+> **Status:** Phase 1 — read-only collectors and review list. Actions land in Phase 3.
 > pipeline. The full collector set lands in Phase 1.
 
 ## Why
@@ -144,8 +144,8 @@ scripts/          # build, run, clean
 
 | Phase | Scope |
 |---|---|
-| 0 | Skeleton, menu bar, build pipeline, read-only probe |
-| 1 | Collectors: memory, processes, startup, brew, disk, caches, leftovers |
+| 0 | Skeleton, menu bar, build pipeline, read-only probe ✅ |
+| 1 | Collectors: memory, processes, startup, brew, disk, caches, leftovers ✅ |
 | 2 | Risk classification and review UI |
 | 3 | Safe actions with preview (login items, launchctl, brew services) |
 | 4 | Cache and disk cleanup with whitelist |

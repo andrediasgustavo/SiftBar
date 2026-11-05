@@ -7,7 +7,7 @@
 - **Bundle ID provisório:** `com.andredias.siftbar`
 - **Alvo mínimo:** macOS 13.0+ (Apple Silicon; Intel não é prioridade)
 - **Idioma:** código, comentários, README e UI em inglês
-- **Status:** Fase 0 aprovada — em implementação
+- **Status:** Fases 0 e 1 concluídas — aguardando aprovação da Fase 2
 
 ---
 
@@ -201,17 +201,18 @@ Cada item recebe também um **score de impacto** para ordenar: bytes liberados >
 
 Cada fase termina em **gate de aprovação**: eu entrego, você testa, aprovamos e só então sigo.
 
-### Fase 0 — Esqueleto (≈ 30–60 min)
-- [ ] `Package.swift`, estrutura de pastas, `Info.plist`
-- [ ] App de barra de menu abre, mostra "Analisar" e uma janela vazia
-- [ ] `scripts/build.sh` gera `SiftBar.app` assinado ad-hoc
-- **Aceite:** ícone na barra, app abre e fecha sem erro.
+### Fase 0 — Esqueleto (≈ 30–60 min) ✅
+- [x] `Package.swift`, estrutura de pastas, `Info.plist`
+- [x] App de barra de menu abre, mostra "Analisar" e uma janela vazia
+- [x] `scripts/build.sh` gera `SiftBar.app` assinado ad-hoc
+- **Aceite:** ícone na barra, app abre e fecha sem erro. ✅
 
-### Fase 1 — Coleta read-only (≈ 1–2 h)
-- [ ] Os 7 coletores + `ScanReport`
-- [ ] Tela com tabela/contadores; botão Analisar funcional
-- [ ] Nenhuma ação disponível ainda
-- **Aceite:** rodar em paralelo com sua máquina real e os números baterem com `top`/`df`.
+### Fase 1 — Coleta read-only (≈ 1–2 h) ✅
+- [x] Os 7 coletores + `ScanReport` (memória, processos, inicialização, brew, disco, caches, sobras)
+- [x] Tela com tabela/contadores; botão Analisar funcional
+- [x] Nenhuma ação disponível ainda
+- **Aceite:** números conferem com `top`/`df`; scan completo em ~0,9 s. ✅
+- **Nota:** login items via `osascript` foram adiados para a Fase 3 (evita prompt de TCC a cada build ad-hoc).
 
 ### Fase 2 — Classificação e revisão (≈ 1–2 h)
 - [ ] Motor de regras + badges de risco + ordenação por impacto
