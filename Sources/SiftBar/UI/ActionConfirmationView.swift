@@ -67,8 +67,8 @@ struct ActionConfirmationView: View {
 
     private var footer: some View {
         HStack(spacing: 10) {
-            if items.contains(where: { $0.risk == .caution }) {
-                Label("Caution items may lose unsaved work.", systemImage: "exclamationmark.triangle")
+            if let note = cautionNote {
+                Label(note, systemImage: "exclamationmark.triangle")
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
@@ -84,6 +84,26 @@ struct ActionConfirmationView: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(isRunning)
         }
+    }
+
+    /// The warning should match what the batch actually does: quitting a
+    /// process can lose unsaved work, but disabling a launch item does not.
+    private var cautionNote: String? {
+        guard items.contains(where: { $0.risk == .caution }) else { return nil }
+
+        if items.contains(where: { if case .killProcess = $0.action { return true }; return false }) {
+            return "Quitting a process may lose unsaved work."
+        }
+
+        if items.contains(where: { if case .disableLaunchItem = $0.action { return true }; return false }) {
+            return "Disabling an item changes what starts at login."
+        }
+
+        if items.contains(where: { if case .deletePath = $0.action { return true }; return false }) {
+            return "Caches are moved to the Trash and can be restored."
+        }
+
+        return "Review caution items before applying."
     }
 
     private var actionTitle: String {
