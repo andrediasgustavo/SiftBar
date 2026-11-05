@@ -80,6 +80,9 @@ struct ScanItem: Identifiable, Equatable, Sendable {
     let risk: Risk
     let action: ItemAction
     let evidence: String
+    /// Extra warning shown in the row and in the confirmation sheet, e.g. an
+    /// app that is still running while its cache is selected for removal.
+    let warning: String?
     /// Per-process rows for grouped processes. Empty for every other item.
     let children: [ScanItem]
 
@@ -93,6 +96,7 @@ struct ScanItem: Identifiable, Equatable, Sendable {
         risk: Risk,
         action: ItemAction,
         evidence: String,
+        warning: String? = nil,
         children: [ScanItem] = []
     ) {
         self.id = id
@@ -104,6 +108,7 @@ struct ScanItem: Identifiable, Equatable, Sendable {
         self.risk = risk
         self.action = action
         self.evidence = evidence
+        self.warning = warning
         self.children = children
     }
 

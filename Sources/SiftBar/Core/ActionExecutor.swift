@@ -174,6 +174,16 @@ enum ActionExecutor {
             return enabled
 
         case .deletePath(let path, _):
+            // Defense in depth: even if an item was forged or a collector
+            // regresses, only known cache roots can be moved to the Trash.
+            guard CleanupWhitelist.allows(path) else {
+                return ActionReport(
+                    item: item,
+                    success: false,
+                    message: "Refused: \(path) is outside the cleanup whitelist."
+                )
+            }
+
             do {
                 try await Task.detached(priority: .userInitiated) {
                     try FileManager.default.trashItem(
@@ -234,6 +244,10 @@ extension ScanItem {
         switch action {
         case .disableLaunchItem, .enableLaunchItem:
             return evidence.hasPrefix("/Library/")
+        case .deletePath(let path, _):
+            // System-wide caches need admin rights too. Phase 5 is deferred, so
+            // lock them instead of letting a doomed action run without sudo.
+            return path.hasPrefix("/Library/")
         default:
             return false
         }

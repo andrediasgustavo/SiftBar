@@ -129,6 +129,26 @@ final class ActionExecutorTests: XCTestCase {
         ).canBeChanged)
     }
 
+    func testSystemCachesRequireAdmin() {
+        let system = item(action: .deletePath(path: "/Library/Developer/CoreSimulator/Caches", bytes: 1))
+        let user = item(action: .deletePath(path: "/Users/tester/Library/Caches", bytes: 1))
+
+        XCTAssertTrue(system.requiresAdmin)
+        XCTAssertFalse(system.canBeChanged)
+        XCTAssertFalse(user.requiresAdmin)
+        XCTAssertTrue(user.canBeChanged)
+    }
+
+    func testDeletePathOutsideTheWhitelistIsRefused() async {
+        let report = await ActionExecutor.perform(
+            item(action: .deletePath(path: "/tmp/siftbar-not-whitelisted", bytes: 1))
+        )
+
+        XCTAssertFalse(report.success)
+        XCTAssertEqual(report.reclaimedBytes, 0)
+        XCTAssertTrue(report.message.contains("whitelist"))
+    }
+
     func testRevealURLUsesTheDeletePath() {
         let item = item(action: .deletePath(path: "/tmp/example-cache", bytes: 10))
 

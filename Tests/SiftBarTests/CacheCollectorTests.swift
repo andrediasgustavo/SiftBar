@@ -20,6 +20,65 @@ final class CacheCollectorTests: XCTestCase {
         XCTAssertTrue(targets.allSatisfy { $0.path.hasPrefix("/tmp/home") || $0.path.hasPrefix("/Library") })
     }
 
+    func testRelatedAppsAreSetForCachesThatAppsUse() {
+        let targets = CacheCollector.targets(home: "/Users/tester")
+
+        XCTAssertEqual(targets.first { $0.name == "Xcode DerivedData" }?.relatedApps, ["xcode"])
+        XCTAssertEqual(targets.first { $0.name == "CoreSimulator (user)" }?.relatedApps, ["simulator", "coresimulatorbridge"])
+        XCTAssertEqual(targets.first { $0.name == "npm" }?.relatedApps, [])
+    }
+
+    func testRunningRelatedAppAddsAWarning() {
+        let target = CacheCollector.Target(
+            name: "Xcode DerivedData",
+            path: "/tmp/DerivedData",
+            risk: .safe,
+            relatedApps: ["xcode"]
+        )
+        let items = CacheCollector.items(
+            from: [CacheCollector.Measured(target: target, bytes: 42)],
+            running: ["xcode"]
+        )
+
+        XCTAssertEqual(
+            items[0].warning,
+            "Xcode is running. Quit it before moving this cache to the Trash."
+        )
+    }
+
+    func testUnrelatedRunningAppDoesNotWarn() {
+        let target = CacheCollector.Target(
+            name: "Xcode DerivedData",
+            path: "/tmp/DerivedData",
+            risk: .safe,
+            relatedApps: ["xcode"]
+        )
+        let items = CacheCollector.items(
+            from: [CacheCollector.Measured(target: target, bytes: 42)],
+            running: ["safari"]
+        )
+
+        XCTAssertNil(items[0].warning)
+    }
+
+    func testWarningListsEveryRunningRelatedApp() {
+        let target = CacheCollector.Target(
+            name: "CoreSimulator (user)",
+            path: "/tmp/CoreSimulator",
+            risk: .safe,
+            relatedApps: ["simulator", "coresimulatorbridge"]
+        )
+        let items = CacheCollector.items(
+            from: [CacheCollector.Measured(target: target, bytes: 42)],
+            running: ["simulator", "coresimulatorbridge"]
+        )
+
+        XCTAssertEqual(
+            items[0].warning,
+            "Simulator and CoreSimulatorBridge are running. Quit them before moving this cache to the Trash."
+        )
+    }
+
     func testItemsAreSortedBySize() {
         let measured = [
             CacheCollector.Measured(

@@ -23,6 +23,9 @@ exact command SiftBar will run. Nothing happens without your confirmation.
 - **Heavy processes** — find the apps using the most memory and quit a single
   process when you no longer need it.
 - **Caches** — reclaim space by moving recreatable cache folders to the Trash.
+  SiftBar warns when a related app is still running.
+- **Biggest consumers** — see the largest files and folders in Downloads,
+  Desktop, Documents, Movies, Pictures, and Music, and reveal them in Finder.
 - **Clear explanations** — every row shows its impact, its source, and a risk
   label (`Safe`, `Caution`, or `Dangerous`).
 
@@ -74,6 +77,8 @@ reclaimed, how many items succeeded, and whether anything failed.
 - **Never touches SIP-protected paths** such as `/System` and `AssetsV2`.
 - **Critical processes are never actionable.** Protected system processes are
   classified as dangerous and cannot be terminated.
+- **Only whitelisted cache paths can be moved to the Trash.** The executor
+  checks again before acting, including path traversal and symlink escapes.
 - **System-wide launch items stay locked** unless SiftBar has administrator
   support (planned, optional).
 - **No account, no telemetry, no network calls.** SiftBar works locally.
@@ -103,13 +108,16 @@ in **System Settings → Privacy & Security**.
 5. Grouped processes show a chevron; expand the row to quit a specific PID.
    Disabled launch items appear as **Disabled launch item** and can be enabled
    again.
-6. Select changeable items with the checkboxes, then use the action bar at the
+6. Open **Disk** to see the largest files and folders in your content
+   directories. They are read-only; use the folder button to review them in
+   Finder.
+7. Select changeable items with the checkboxes, then use the action bar at the
    bottom.
-7. Review the commands and confirm. SiftBar runs them, rescans, and shows the
+8. Review the commands and confirm. SiftBar runs them, rescans, and shows the
    result.
-8. Open **History** (`⌘Y`) to see previous actions; `⌘R` runs a new analysis
+9. Open **History** (`⌘Y`) to see previous actions; `⌘R` runs a new analysis
    and `⌘F` focuses search.
-9. Press **Quit SiftBar** (`⌘Q`) to exit.
+10. Press **Quit SiftBar** (`⌘Q`) to exit.
 
 ---
 
@@ -185,11 +193,13 @@ Unit tests live in `Tests/SiftBarTests/` and use XCTest. Run them with:
 swift test
 ```
 
-The suite has 167 tests covering command execution, every parser (`vm_stat`,
+The suite has 194 tests covering command execution, every parser (`vm_stat`,
 swap, `df`, `ps`, `launchctl`, `brew services`, `du`), risk thresholds,
 protected-process rules, duplicate detection, grouping, per-PID children,
 filtering, search, sorting, action previews, selection rules, disabled/enabled
-launch labels, history storage, and a live read-only scan.
+launch labels, history storage, cleanup whitelist enforcement (including
+traversal and symlink escapes), largest-consumer ranking, running-app warnings,
+and a live read-only scan.
 
 The GitHub Actions workflow at `.github/workflows/ci.yml` runs on every push
 and pull request to `main`:
@@ -211,7 +221,7 @@ Release for that tag.
 Sources/SiftBar/
 ├── App/          # entry point, state, dashboard window
 ├── Core/         # models, command runner, probes, filters, executor, history
-├── Collectors/   # memory, processes, startup, services, disk, caches, leftovers
+├── Collectors/   # memory, processes, startup, services, disk, caches, big consumers
 ├── UI/           # dashboard, rows, menu content, confirmation, history
 └── Support/      # path sizing
 Resources/        # Info.plist (LSUIElement = true)
@@ -229,7 +239,7 @@ docs/screenshots/ # README screenshots
 | 1 | Collectors: memory, processes, startup, brew, disk, caches, leftovers | ✅ |
 | 2 | Risk classification, process grouping, filters, and search | ✅ |
 | 3 | Safe actions with preview (processes, launchctl, brew services) | ✅ per-PID and enable; login items pending |
-| 4 | Cache and disk cleanup with whitelist | ⏳ caches done; disk cleanup pending |
+| 4 | Cache and disk cleanup with whitelist | ✅ |
 | 5 | Optional privileged helper for system-level actions | ⏸ blocked on Developer ID |
 | 6 | History, menu commands, scheduling, notifications, icon | ⏳ history and shortcuts done |
 | 7 | Distribution: DMG and GitHub Releases | ✅ notarization pending |

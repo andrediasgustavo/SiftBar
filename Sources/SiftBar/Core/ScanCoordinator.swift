@@ -10,6 +10,7 @@ enum ScanCoordinator {
             StartupCollector(),
             BrewCollector(),
             DiskCollector(disk: snapshot.disk),
+            LargeConsumersCollector(),
             CacheCollector(),
             OrphanCollector()
         ]

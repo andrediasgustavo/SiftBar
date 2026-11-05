@@ -10,7 +10,7 @@
 - **Provisional bundle ID:** `com.andredias.siftbar`
 - **Minimum target:** macOS 13.0+ (Apple Silicon; Intel is not a priority)
 - **Language:** code, comments, documentation, and UI are English
-- **Status:** Phases 0–3 complete; Phase 4 partially complete. See §8.
+- **Status:** Phases 0–4 complete; Phase 6 partially complete. See §8.
 
 ---
 
@@ -90,6 +90,9 @@ SiftBar/
 │   │   ├── ProcessSafety.swift       # protected process rules
 │   │   ├── ReviewFilter.swift        # category/risk/search filters
 │   │   ├── SystemProbe.swift         # memory and disk probes
+│   │   ├── HistoryStore.swift        # audit log in Application Support
+│   │   ├── CleanupWhitelist.swift    # allowed Trash roots
+│   │   ├── RunningProcesses.swift    # app-in-use detection
 │   │   └── ActionExecutor.swift      # previews and confirmed actions
 │   ├── Collectors/
 │   │   ├── MemoryCollector.swift
@@ -97,6 +100,7 @@ SiftBar/
 │   │   ├── StartupCollector.swift    # launch agents/daemons
 │   │   ├── BrewCollector.swift
 │   │   ├── DiskCollector.swift
+│   │   ├── LargeConsumersCollector.swift
 │   │   ├── CacheCollector.swift
 │   │   └── OrphanCollector.swift
 │   ├── UI/
@@ -110,7 +114,7 @@ SiftBar/
 │       └── PathSizer.swift
 ├── Resources/
 │   └── Info.plist                    # LSUIElement = true
-├── Tests/SiftBarTests/               # 167 XCTest cases
+├── Tests/SiftBarTests/               # 194 XCTest cases
 └── scripts/
     ├── build.sh                      # direct swiftc build + .app assembly + ad-hoc sign
     ├── run.sh                        # build + open
@@ -180,7 +184,8 @@ struct ScanItem: Identifiable {
 | Startup | `launchctl list`, `~/Library/LaunchAgents`, `/Library/LaunchAgents`, `/Library/LaunchDaemons`, `launchctl print-disabled` | failing labels and third-party launch items; disabled labels appear as disabled with an enable action |
 | Services | `brew services list` | started, errored, or scheduled services |
 | Disk | `df -k` | free/used space and usage risk |
-| Caches | Fixed whitelist (npm, Expo, Xcode DerivedData, Gradle, Homebrew, CoreSimulator, general caches) | size per cache above 20 MB |
+| Caches | Fixed whitelist (npm, Expo, Xcode DerivedData, Gradle, Homebrew, CoreSimulator, general caches) | size per cache above 20 MB; warns when a related app is running |
+| Big consumers | `du -k -d 1` on Downloads, Desktop, Documents, Movies, Pictures, Music | files and folders above 1 GB, read-only |
 | Leftovers | Installed apps vs. `~/Library/Application Support` | folders with no matching app above 200 MB, top 10 |
 
 **Robustness rules:** each collector runs independently; one failure does not
@@ -204,6 +209,7 @@ trigger a TCC prompt on every launch.
 | Protected process, root process, or system binary | Dangerous | Never |
 | SIP-protected path | Dangerous | Never (blocked) |
 | Application Support folder with no matching app | Caution | Review; read-only for now |
+| Large file/folder (≥ 1 GB) | Caution | Review in Finder; read-only |
 | Disk ≥ 80% used | Caution | Review |
 | Disk ≥ 90% used | Dangerous | Review |
 
@@ -231,7 +237,7 @@ process count.
 | Disable launch item | `launchctl bootout gui/<uid>/<label>` then `launchctl disable gui/<uid>/<label>` |
 | Enable launch item | `launchctl enable gui/<uid>/<label>` then `launchctl bootstrap gui/<uid> <plist>` |
 | Stop Homebrew service | `brew services stop <name>` |
-| Remove cache | Move the folder to the Trash (reversible) |
+| Remove cache | Move the folder to the Trash (reversible); only whitelisted cache roots are accepted |
 
 **Required guardrails:**
 
@@ -240,6 +246,10 @@ process count.
 - Never offer actions on `Dangerous` items.
 - Lock `/Library` launch items because they require admin rights.
 - Do not run `sudo` in v1; system-level actions are deferred to Phase 5.
+- The executor re-checks the cleanup whitelist (including path traversal and
+  symlink escapes) even though the collectors already produce known paths.
+- System-wide caches under `/Library` are locked because they require admin
+  rights; they are shown but never actioned.
 - No shell interpolation: every command uses an executable plus an argument
   array.
 - Confirm before every batch; no automatic cleanup.
@@ -293,15 +303,15 @@ only then do we move on.
 - **Acceptance:** tested on real reversible items; no protected process or
   admin-only item can be actioned. ✅
 
-### Phase 4 — Cache and disk cleanup (≈ 1–2 h) ⏳
+### Phase 4 — Cache and disk cleanup (≈ 1–2 h) ✅
 - [x] Cache size calculation and fixed whitelist
 - [x] Trash-based removal with confirmation and reclaimed-bytes report
-- [ ] Disk cleanup: largest files/folders and "biggest consumers" view
-- [ ] Enforce the path whitelist inside `ActionExecutor` (today the collectors
-  only produce whitelisted paths)
-- [ ] Warn when an app is running before removing its data
+- [x] Disk cleanup: largest files/folders (`du -d 1`) and biggest-consumers rows
+- [x] Enforce the path whitelist inside `ActionExecutor` (traversal and symlink
+  escapes included)
+- [x] Warn when an app is running before removing its data
 - **Acceptance:** test caches are removed; no path outside the whitelist is
-  touched.
+  touched. ✅
 
 ### Phase 5 — Administrator privileges (≈ 2–4 h, optional) ⏸
 - [ ] Privileged helper (`SMAppService`) for system-level actions
@@ -333,16 +343,18 @@ only then do we move on.
 
 ## 9. Testing
 
-- **Unit tests:** parsers for `vm_stat`, `ps`, `launchctl`, `brew services`;
-  risk rules; review filters; process safety; action previews and selection;
-  grouped-process children; disabled/enabled launch labels; history storage.
+- **Unit tests:** parsers for `vm_stat`, `ps`, `launchctl`, `brew services`,
+  `du`; risk rules; review filters; process safety; action previews and
+  selection; grouped-process children; disabled/enabled launch labels; history
+  storage; cleanup whitelist enforcement; largest-consumer ranking; running-app
+  warnings.
 - **Integration tests:** each collector against real data; `CommandRunner` with
   timeouts and invalid arguments; a full scan.
-- **Safety tests:** protected PIDs, admin-only items, read-only items, and
-  path/command construction.
+- **Safety tests:** protected PIDs, admin-only items, read-only items, path and
+  command construction, traversal and symlink escapes.
 - **Manual tests:** compare numbers with Activity Monitor, `top`, `df`, and
   `launchctl list`; verify Finder reveal and confirmation flows.
-- **Current suite:** 167 XCTest cases. CI runs `swift build`,
+- **Current suite:** 194 XCTest cases. CI runs `swift build`,
   `swift build -c release`, `swift test --parallel`, and validates the app and
   DMG.
 - **Gaps:** no automated UI tests; destructive actions are not executed in
@@ -357,7 +369,7 @@ only then do we move on.
 | Local CLT cannot link the SwiftPM manifest | Scripts build with `swiftc`; CI covers `swift build`/`swift test` |
 | TCC blocks reading `~/Library` | Detect and show a warning; link to Settings |
 | Killing a process with unsaved work | `Caution` risk, app name, explicit confirmation |
-| Deleting a cache in use | Planned: detect open processes and block |
+| Deleting a cache in use | Warn when a related app is running and `Caution` risk |
 | Numbers differ from Finder | Explain category vs. folder (the "15 GB in Documents" lesson) |
 | Ad-hoc signing triggers Gatekeeper | Document right-click → Open; notarize when a Developer ID exists |
 | Privileged helper is not shippable without signing | Defer Phase 5 until Developer ID + notarization |
@@ -371,11 +383,10 @@ only then do we move on.
 
 Recommended order:
 
-1. Finish **Phase 4**: disk cleanup (largest files/folders) and enforce the
-   path whitelist in the executor.
-2. Add keyboard selection/navigation in the review list.
-3. Add notifications, scheduling, and a custom icon.
-4. Add login item removal when TCC behavior is acceptable.
+1. Add keyboard selection/navigation in the review list.
+2. Add notifications, scheduling, and a custom icon.
+3. Add login item removal when TCC behavior is acceptable.
+4. Add Markdown report export and a "monitor only" mode.
 5. Leave the privileged helper (Phase 5) and notarization until a Developer ID
    is available.
 

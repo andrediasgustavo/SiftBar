@@ -31,6 +31,13 @@ struct ActionConfirmationView: View {
                                 .foregroundStyle(.secondary)
                                 .textSelection(.enabled)
                                 .fixedSize(horizontal: false, vertical: true)
+
+                            if let warning = item.warning {
+                                Label(warning, systemImage: "exclamationmark.triangle.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
                         }
                         .padding(.vertical, 8)
 
@@ -89,7 +96,13 @@ struct ActionConfirmationView: View {
     /// The warning should match what the batch actually does: quitting a
     /// process can lose unsaved work, but disabling a launch item does not.
     private var cautionNote: String? {
-        guard items.contains(where: { $0.risk == .caution }) else { return nil }
+        guard items.contains(where: { $0.risk == .caution }) || items.contains(where: { $0.warning != nil }) else {
+            return nil
+        }
+
+        if let warning = items.compactMap(\.warning).first {
+            return warning
+        }
 
         if items.contains(where: { if case .killProcess = $0.action { return true }; return false }) {
             return "Quitting a process may lose unsaved work."
