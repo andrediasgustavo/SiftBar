@@ -68,7 +68,9 @@ final class ProcessCollectorTests: XCTestCase {
         XCTAssertEqual(items[2].risk, .caution)
 
         XCTAssertEqual(items[3].title, "foo")
-        XCTAssertEqual(items[3].risk, .safe)
+        XCTAssertEqual(items[3].risk, .dangerous)
+        XCTAssertEqual(items[3].action, .none)
+        XCTAssertTrue(items[3].detail.contains("never terminate"))
     }
 
     func testItemsUseKillProcessActionWithPID() throws {
@@ -120,5 +122,100 @@ final class ProcessCollectorTests: XCTestCase {
         XCTAssertEqual(items.count, 1)
         XCTAssertEqual(items[0].title, "0 processes running")
         XCTAssertEqual(items[0].impactLabel, "0 processes")
+    }
+
+    func testProtectedProcessIsDangerousAndNotKillable() {
+        let entries = [
+            ProcessCollector.Entry(
+                pid: 42,
+                user: "root",
+                bytes: 2_000_000_000,
+                command: "/usr/libexec/important-daemon"
+            )
+        ]
+
+        let items = ProcessCollector.items(from: entries)
+
+        XCTAssertEqual(items.count, 2)
+        XCTAssertEqual(items[1].title, "important-daemon")
+        XCTAssertEqual(items[1].risk, .dangerous)
+        XCTAssertEqual(items[1].action, .none)
+        XCTAssertTrue(items[1].detail.contains("never terminate"))
+    }
+
+    func testKnownCriticalProcessIsDangerousEvenForTheCurrentUser() {
+        let entries = [
+            ProcessCollector.Entry(
+                pid: 77,
+                user: "andre",
+                bytes: 900_000_000,
+                command: "/tmp/WindowServer"
+            )
+        ]
+
+        let items = ProcessCollector.items(from: entries)
+
+        XCTAssertEqual(items[1].risk, .dangerous)
+        XCTAssertEqual(items[1].action, .none)
+    }
+
+    func testGroupsAggregateProcessesWithTheSameExecutableName() {
+        let entries = [
+            ProcessCollector.Entry(
+                pid: 10,
+                user: "andre",
+                bytes: 300 * 1024 * 1024,
+                command: "/Applications/App.app/Contents/MacOS/Helper"
+            ),
+            ProcessCollector.Entry(
+                pid: 11,
+                user: "andre",
+                bytes: 400 * 1024 * 1024,
+                command: "/Applications/App.app/Contents/MacOS/Helper"
+            ),
+            ProcessCollector.Entry(
+                pid: 12,
+                user: "andre",
+                bytes: 500 * 1024 * 1024,
+                command: "/Applications/Other.app/Contents/MacOS/Other"
+            )
+        ]
+
+        let items = ProcessCollector.items(from: entries)
+
+        XCTAssertEqual(items.count, 3)
+        XCTAssertEqual(items[1].title, "Helper")
+        XCTAssertEqual(items[1].impactBytes, 700 * 1024 * 1024)
+        XCTAssertEqual(items[1].action, .none)
+        XCTAssertTrue(items[1].detail.contains("2 processes"))
+        XCTAssertEqual(items[2].title, "Other")
+    }
+
+    func testGroupsFromEntriesPreserveInputOrder() {
+        let entries = [
+            ProcessCollector.Entry(pid: 1, user: "andre", bytes: 10, command: "/bin/a"),
+            ProcessCollector.Entry(pid: 2, user: "andre", bytes: 20, command: "/bin/b"),
+            ProcessCollector.Entry(pid: 3, user: "andre", bytes: 30, command: "/bin/a")
+        ]
+
+        let groups = ProcessCollector.groups(from: entries)
+
+        XCTAssertEqual(groups.map(\.name), ["a", "b"])
+        XCTAssertEqual(groups[0].entries.count, 2)
+        XCTAssertEqual(groups[0].bytes, 40)
+    }
+
+    func testGroupOfProtectedProcessesIsDangerous() {
+        let entries = [
+            ProcessCollector.Entry(pid: 21, user: "root", bytes: 200 * 1024 * 1024, command: "/usr/libexec/daemon"),
+            ProcessCollector.Entry(pid: 22, user: "root", bytes: 200 * 1024 * 1024, command: "/usr/libexec/daemon")
+        ]
+
+        let items = ProcessCollector.items(from: entries)
+
+        XCTAssertEqual(items.count, 2)
+        XCTAssertEqual(items[1].title, "daemon")
+        XCTAssertEqual(items[1].risk, .dangerous)
+        XCTAssertEqual(items[1].action, .none)
     }
 }

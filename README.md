@@ -6,7 +6,8 @@
 A macOS menu bar app that **analyzes your system, explains what it finds, and
 lets you choose what to clean up** — nothing runs without confirmation.
 
-> **Status:** Phase 1 — read-only collectors and review list. Actions land in Phase 3.
+> **Status:** Phase 2 — risk classification, process grouping, filters, and
+> search. Actions land in Phase 3.
 
 ## Why
 
@@ -26,6 +27,8 @@ opposite:
 - No "clean everything" button.
 - Full transparency: source and command for every action.
 - Never touches SIP-protected paths (`/System`, `AssetsV2`, etc.).
+- Critical system processes are classified as dangerous and can never be
+  terminated from SiftBar.
 - No placebo "free up RAM" feature.
 
 ## Requirements
@@ -73,7 +76,9 @@ in the menu bar.
    (`⌘R`) directly from the menu.
 3. Press **Analyze**. The scan is read-only: it collects totals and reports
    the current state without changing anything.
-4. Press **Quit SiftBar** (`⌘Q`) to exit.
+4. Filter the review list by category or risk, or search across titles,
+   details, evidence, and category names. **Reset** clears all filters.
+5. Press **Quit SiftBar** (`⌘Q`) to exit.
 
 To open the dashboard at launch during development:
 
@@ -118,8 +123,9 @@ swift test
 ```
 
 The suite covers command execution, every parser (`vm_stat`, swap, `df`,
-`ps`, `launchctl`, `brew services`, `du`), risk thresholds, duplicate
-detection, sorting, and a live read-only scan.
+`ps`, `launchctl`, `brew services`, `du`), risk thresholds, protected-process
+rules, duplicate detection, grouping, filtering, search, sorting, and a live
+read-only scan.
 
 The GitHub Actions workflow at `.github/workflows/ci.yml` runs on every push
 and pull request to `main`:
@@ -151,7 +157,7 @@ scripts/          # build, run, clean
 |---|---|
 | 0 | Skeleton, menu bar, build pipeline, read-only probe ✅ |
 | 1 | Collectors: memory, processes, startup, brew, disk, caches, leftovers ✅ |
-| 2 | Risk classification and review UI |
+| 2 | Risk classification, process grouping, filters, and search ✅ |
 | 3 | Safe actions with preview (login items, launchctl, brew services) |
 | 4 | Cache and disk cleanup with whitelist |
 | 5 | Optional privileged helper for system-level actions |

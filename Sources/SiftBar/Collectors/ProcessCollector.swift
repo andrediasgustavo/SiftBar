@@ -17,6 +17,31 @@ struct ProcessCollector: Collector {
         }
     }
 
+    /// Processes sharing an executable name are shown as one row to avoid
+    /// flooding the list with dozens of identical helpers.
+    struct Group: Sendable, Equatable {
+        let name: String
+        var entries: [Entry]
+
+        var bytes: Int64 {
+            entries.reduce(0) { $0 + $1.bytes }
+        }
+
+        var isProtected: Bool {
+            entries.contains { ProcessSafety.isProtected($0) }
+        }
+
+        var risk: Risk {
+            if isProtected { return .dangerous }
+            return ProcessCollector.risk(for: bytes)
+        }
+
+        var userLabel: String {
+            let users = Set(entries.map(\.user))
+            return users.count == 1 ? (users.first ?? "-") : "multiple users"
+        }
+    }
+
     func collect() async -> [ScanItem] {
         guard let result = try? await CommandRunner.run(
             "/bin/ps",
@@ -57,7 +82,7 @@ struct ProcessCollector: Collector {
             ScanItem(
                 category: .processes,
                 title: "\(entries.count) processes running",
-                detail: "Only processes above 150 MB are listed below. Sort order is by resident memory.",
+                detail: "Only processes above 150 MB are listed below. Processes sharing an executable are grouped and sorted by total resident memory.",
                 impactLabel: "\(entries.count) processes",
                 impactBytes: nil,
                 risk: .safe,
@@ -71,24 +96,67 @@ struct ProcessCollector: Collector {
             .sorted { $0.bytes > $1.bytes }
             .prefix(limit)
 
-        for entry in heavy {
-            items.append(ScanItem(
-                category: .processes,
-                title: entry.name,
-                detail: "PID \(entry.pid) · \(entry.user) · \(format(entry.bytes)) resident",
-                impactLabel: format(entry.bytes),
-                impactBytes: entry.bytes,
-                risk: risk(for: entry.bytes),
-                action: .killProcess(pid: entry.pid, name: entry.name),
-                evidence: "ps -Ao pid,user,rss,comm"
-            ))
+        let grouped = groups(from: Array(heavy))
+            .sorted { $0.bytes > $1.bytes }
+
+        for group in grouped {
+            items.append(item(for: group))
         }
 
         return items
     }
 
-    /// Processes at or above 1 GB are flagged as caution because quitting them
-    /// can lose unsaved work; smaller ones are informational.
+    static func groups(from entries: [Entry]) -> [Group] {
+        var groups: [Group] = []
+        var indexByName: [String: Int] = [:]
+
+        for entry in entries {
+            if let index = indexByName[entry.name] {
+                groups[index].entries.append(entry)
+            } else {
+                indexByName[entry.name] = groups.count
+                groups.append(Group(name: entry.name, entries: [entry]))
+            }
+        }
+
+        return groups
+    }
+
+    static func item(for group: Group) -> ScanItem {
+        let count = group.entries.count
+        let protectedSuffix = group.isProtected
+            ? " Protected system process — SiftBar will never terminate it."
+            : ""
+
+        let detail: String
+        let action: ItemAction
+
+        if count == 1, let entry = group.entries.first {
+            detail = "PID \(entry.pid) · \(entry.user) · \(format(entry.bytes)) resident.\(protectedSuffix)"
+            action = group.isProtected
+                ? .none
+                : .killProcess(pid: entry.pid, name: entry.name)
+        } else {
+            detail = "\(count) processes · \(group.userLabel) · \(format(group.bytes)) resident.\(protectedSuffix)"
+            // A group can contain several PIDs, so there is no single safe
+            // process to terminate. Phase 3 will offer per-process expansion.
+            action = .none
+        }
+
+        return ScanItem(
+            category: .processes,
+            title: group.name,
+            detail: detail,
+            impactLabel: format(group.bytes),
+            impactBytes: group.bytes,
+            risk: group.risk,
+            action: action,
+            evidence: "ps -Ao pid,user,rss,comm"
+        )
+    }
+
+    /// Non-protected processes at or above 1 GB are flagged as caution because
+    /// quitting them can lose unsaved work.
     static func risk(for bytes: Int64) -> Risk {
         bytes >= 1_000_000_000 ? .caution : .safe
     }

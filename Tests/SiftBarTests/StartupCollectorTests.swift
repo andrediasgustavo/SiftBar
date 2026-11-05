@@ -111,6 +111,18 @@ final class StartupCollectorTests: XCTestCase {
         XCTAssertTrue(items.isEmpty)
     }
 
+    func testSystemWideLaunchItemsAreCaution() {
+        XCTAssertEqual(StartupCollector.risk(forDirectory: "/Library/LaunchAgents"), .caution)
+        XCTAssertEqual(StartupCollector.risk(forDirectory: "/Library/LaunchDaemons"), .caution)
+    }
+
+    func testUserLaunchAgentsAreSafe() {
+        XCTAssertEqual(
+            StartupCollector.risk(forDirectory: "/Users/tester/Library/LaunchAgents"),
+            .safe
+        )
+    }
+
     // MARK: - Helpers
 
     private func makeTemporaryDirectory() throws -> URL {

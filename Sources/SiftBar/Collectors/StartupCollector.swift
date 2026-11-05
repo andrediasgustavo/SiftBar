@@ -93,7 +93,7 @@ struct StartupCollector: Collector {
                     detail: "Registered in \(directory). Disable it only if the related app or service is no longer needed.",
                     impactLabel: "launch agent",
                     impactBytes: nil,
-                    risk: .safe,
+                    risk: risk(forDirectory: directory),
                     action: .disableLaunchItem(label: label),
                     evidence: directory
                 ))
@@ -103,5 +103,11 @@ struct StartupCollector: Collector {
         }
 
         return items
+    }
+
+    /// User agents are reversible without privileges. System-wide agents and
+    /// daemons require admin rights, so they deserve extra attention.
+    static func risk(forDirectory directory: String) -> Risk {
+        directory.hasPrefix("/Library/") ? .caution : .safe
     }
 }

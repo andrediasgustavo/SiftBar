@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DashboardView: View {
     @EnvironmentObject private var appState: AppState
+    @StateObject private var filter = ReviewFilterModel()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -10,8 +11,14 @@ struct DashboardView: View {
             analysisPanel
 
             if let report = appState.report {
+                filterBar(report)
                 reviewHeader(report)
-                itemList(report)
+
+                if filteredItems.isEmpty {
+                    noResultsState
+                } else {
+                    itemList(filteredItems)
+                }
             } else {
                 emptyState
             }
@@ -20,6 +27,11 @@ struct DashboardView: View {
         }
         .padding(24)
         .frame(minWidth: 700, minHeight: 560)
+    }
+
+    private var filteredItems: [ScanItem] {
+        guard let report = appState.report else { return [] }
+        return filter.apply(to: report.items)
     }
 
     private var header: some View {
@@ -79,6 +91,7 @@ struct DashboardView: View {
 
                 if appState.report != nil {
                     Button("Clear") {
+                        filter.reset()
                         appState.clearReport()
                     }
                     .buttonStyle(.link)
@@ -93,14 +106,83 @@ struct DashboardView: View {
         .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 12))
     }
 
+    private func filterBar(_ report: ScanReport) -> some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                TextField("Search items", text: $filter.searchText)
+                    .textFieldStyle(.plain)
+                    .font(.callout)
+
+                if !filter.searchText.isEmpty {
+                    Button {
+                        filter.searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .frame(width: 220)
+            .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 7))
+
+            Picker("Category", selection: $filter.category) {
+                Text("All categories").tag(ItemCategory?.none)
+
+                ForEach(ItemCategory.allCases.sorted { $0.sortOrder < $1.sortOrder }, id: \.rawValue) { category in
+                    let count = ReviewFilter.count(of: category, in: report.items)
+                    if count > 0 {
+                        Text("\(category.title) (\(count))").tag(ItemCategory?.some(category))
+                    }
+                }
+            }
+            .labelsHidden()
+            .frame(width: 160)
+
+            Picker("Risk", selection: $filter.risk) {
+                Text("All risks").tag(Risk?.none)
+
+                ForEach(Risk.allCases, id: \.rawValue) { risk in
+                    let count = ReviewFilter.count(of: risk, in: report.items)
+                    if count > 0 {
+                        Text("\(risk.label) (\(count))").tag(Risk?.some(risk))
+                    }
+                }
+            }
+            .labelsHidden()
+            .frame(width: 130)
+
+            Spacer(minLength: 0)
+
+            if filter.isActive {
+                Button("Reset") {
+                    filter.reset()
+                }
+                .buttonStyle(.link)
+            }
+        }
+        .padding(10)
+        .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 10))
+    }
+
     private func reviewHeader(_ report: ScanReport) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text("Review")
                 .font(.headline)
 
-            Text("Read-only results")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text(
+                filter.isActive
+                    ? "Showing \(filteredItems.count) of \(report.items.count)"
+                    : "Read-only results"
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
 
             Spacer()
 
@@ -110,39 +192,59 @@ struct DashboardView: View {
         }
     }
 
-    private func itemList(_ report: ScanReport) -> some View {
-        List {
-            ForEach(sections(from: report)) { section in
-                Section {
-                    ForEach(section.items) { item in
-                        ItemRow(item: item)
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
-                            .listRowInsets(EdgeInsets(top: 3, leading: 0, bottom: 3, trailing: 0))
+    private func itemList(_ items: [ScanItem]) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                ForEach(sections(from: items)) { section in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label(
+                            "\(section.category.title) · \(section.items.count)",
+                            systemImage: section.category.symbol
+                        )
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                        ForEach(section.items) { item in
+                            ItemRow(item: item)
+                        }
                     }
-                } header: {
-                    Label(
-                        "\(section.category.title) · \(section.items.count)",
-                        systemImage: section.category.symbol
-                    )
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
                 }
             }
+            .padding(.vertical, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .listStyle(.inset)
-        .scrollContentBackground(.hidden)
         .frame(maxHeight: .infinity)
     }
 
-    private func sections(from report: ScanReport) -> [CategorySection] {
+    private func sections(from items: [ScanItem]) -> [CategorySection] {
         ItemCategory.allCases
             .sorted { $0.sortOrder < $1.sortOrder }
             .compactMap { category -> CategorySection? in
-                let items = report.items.filter { $0.category == category }
-                guard !items.isEmpty else { return nil }
-                return CategorySection(category: category, items: items)
+                let categoryItems = items.filter { $0.category == category }
+                guard !categoryItems.isEmpty else { return nil }
+                return CategorySection(category: category, items: categoryItems)
             }
+    }
+
+    private var noResultsState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+                .font(.system(size: 28))
+                .foregroundStyle(.secondary)
+
+            Text("No items match")
+                .font(.callout.weight(.medium))
+
+            Text("Try a different search or clear the filters.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Button("Reset filters") {
+                filter.reset()
+            }
+            .buttonStyle(.link)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var emptyState: some View {

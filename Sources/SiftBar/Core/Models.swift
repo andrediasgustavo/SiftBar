@@ -1,6 +1,6 @@
 import Foundation
 
-enum Risk: String, Codable, CaseIterable, Equatable, Sendable {
+enum Risk: String, Codable, CaseIterable, Hashable, Sendable {
     case safe
     case caution
     case dangerous
@@ -14,7 +14,7 @@ enum Risk: String, Codable, CaseIterable, Equatable, Sendable {
     }
 }
 
-enum ItemCategory: String, Codable, CaseIterable, Equatable, Sendable {
+enum ItemCategory: String, Codable, CaseIterable, Hashable, Sendable {
     case memory
     case processes
     case startup
@@ -100,6 +100,12 @@ struct ScanItem: Identifiable, Equatable, Sendable {
         self.risk = risk
         self.action = action
         self.evidence = evidence
+    }
+
+    /// Dangerous items are informational only; even if a collector attaches an
+    /// action by mistake, the review UI must never offer to apply it.
+    var isActionable: Bool {
+        risk != .dangerous && action != .none
     }
 }
 

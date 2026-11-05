@@ -116,6 +116,43 @@ final class ModelTests: XCTestCase {
         XCTAssertNotEqual(first.id, second.id)
     }
 
+    func testDangerousItemsAreNeverActionable() {
+        let dangerous = ScanItem(
+            category: .processes,
+            title: "Protected",
+            detail: "",
+            impactLabel: "",
+            impactBytes: nil,
+            risk: .dangerous,
+            action: .killProcess(pid: 1, name: "launchd"),
+            evidence: ""
+        )
+        let safe = ScanItem(
+            category: .caches,
+            title: "Cache",
+            detail: "",
+            impactLabel: "",
+            impactBytes: nil,
+            risk: .safe,
+            action: .deletePath(path: "/tmp/cache", bytes: 1),
+            evidence: ""
+        )
+        let informational = ScanItem(
+            category: .disk,
+            title: "Disk",
+            detail: "",
+            impactLabel: "",
+            impactBytes: nil,
+            risk: .safe,
+            action: .none,
+            evidence: ""
+        )
+
+        XCTAssertFalse(dangerous.isActionable)
+        XCTAssertTrue(safe.isActionable)
+        XCTAssertFalse(informational.isActionable)
+    }
+
     func testItemActionEquality() {
         XCTAssertEqual(ItemAction.none, .none)
         XCTAssertEqual(ItemAction.stopService(name: "redis"), .stopService(name: "redis"))

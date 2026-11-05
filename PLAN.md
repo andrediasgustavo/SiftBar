@@ -7,7 +7,7 @@
 - **Bundle ID provisório:** `com.andredias.siftbar`
 - **Alvo mínimo:** macOS 13.0+ (Apple Silicon; Intel não é prioridade)
 - **Idioma:** código, comentários, README e UI em inglês
-- **Status:** Fases 0 e 1 concluídas — aguardando aprovação da Fase 2
+- **Status:** Fases 0, 1 e 2 concluídas — aguardando aprovação da Fase 3
 
 ---
 
@@ -214,11 +214,14 @@ Cada fase termina em **gate de aprovação**: eu entrego, você testa, aprovamos
 - **Aceite:** números conferem com `top`/`df`; scan completo em ~0,9 s. ✅
 - **Nota:** login items via `osascript` foram adiados para a Fase 3 (evita prompt de TCC a cada build ad-hoc).
 
-### Fase 2 — Classificação e revisão (≈ 1–2 h)
-- [ ] Motor de regras + badges de risco + ordenação por impacto
-- [ ] Filtros por categoria/risco; busca
-- [ ] Itens "Perigoso" apenas informativos
-- **Aceite:** lista compreensível sem ler o código; riscos coerentes com a tabela da seção 6.
+### Fase 2 — Classificação e revisão (≈ 1–2 h) ✅
+- [x] Motor de regras + badges de risco + ordenação por impacto
+- [x] Filtros por categoria/risco; busca (título, detalhe, evidência e categoria)
+- [x] Itens "Perigoso" apenas informativos
+- [x] Processos do sistema protegidos (PID 1, `WindowServer`, `launchd`, root e binários de sistema) viram `Dangerous` e nunca recebem ação de encerrar
+- [x] Processos com o mesmo executável são agrupados (ex.: helpers do Chrome) para reduzir ruído
+- [x] Launch items em `/Library` viram `Caution` (exigem admin); itens do usuário permanecem `Safe`
+- **Aceite:** lista compreensível sem ler o código; riscos coerentes com a tabela da seção 6. ✅
 
 ### Fase 3 — Ações seguras (≈ 1–2 h)
 - [ ] Remover login item, `launchctl bootout`, `brew services stop`
