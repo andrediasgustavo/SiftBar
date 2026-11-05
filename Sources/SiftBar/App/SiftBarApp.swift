@@ -30,7 +30,7 @@ struct SiftBarApp: App {
             return "exclamationmark.triangle.fill"
         }
 
-        return "waveform.path.ecg"
+        return "line.3.horizontal.decrease"
     }
 }
 

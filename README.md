@@ -87,7 +87,7 @@ reclaimed, how many items succeeded, and whether anything failed.
 
 1. Download the latest **[SiftBar.dmg](https://github.com/andrediasgustavo/SiftBar/releases/latest/download/SiftBar.dmg)**.
 2. Open the DMG and drag **SiftBar** into **Applications**.
-3. SiftBar runs in the menu bar — look for the waveform icon. There is no Dock
+3. SiftBar runs in the menu bar — look for the filter icon. There is no Dock
    icon.
 4. On first launch, right-click **SiftBar** and choose **Open**, or allow it
    under **System Settings → Privacy & Security**. The build is ad-hoc signed
@@ -144,6 +144,7 @@ ad-hoc, and launches it.
 | `./scripts/build.sh debug` | Debug build without launching |
 | `./scripts/package.sh` | Build `dist/SiftBar.dmg` from the app bundle |
 | `./scripts/clean.sh` | Remove `.build/` and `dist/` |
+| `swift scripts/make-icon.swift Resources/AppIcon.icns` | Regenerate the app icon |
 | `swift build` | Build through SwiftPM (requires a working toolchain) |
 | `swift test` | Run unit tests (requires full Xcode) |
 
@@ -170,7 +171,7 @@ Use the table below to find where each value lives.
 |---|---|---|
 | Bundle identifier | `com.andredias.siftbar` | `Resources/Info.plist` → `CFBundleIdentifier` |
 | Display name | `SiftBar` | `Resources/Info.plist` → `CFBundleDisplayName` / `CFBundleName` |
-| Version | `0.2.0` (build `2`) | `Resources/Info.plist` → `CFBundleShortVersionString` / `CFBundleVersion` |
+| Version | `0.2.1` (build `3`) | `Resources/Info.plist` → `CFBundleShortVersionString` / `CFBundleVersion` |
 | Minimum macOS | `13.0` | `Resources/Info.plist` → `LSMinimumSystemVersion`, `Package.swift` → `.macOS(.v13)`, `scripts/build.sh` → `-target` |
 | Menu bar only | enabled | `Resources/Info.plist` → `LSUIElement` |
 | Build configuration | `release` | First argument to `scripts/build.sh` / `scripts/run.sh` (`release` or `debug`) |
@@ -224,7 +225,7 @@ Sources/SiftBar/
 ├── Collectors/   # memory, processes, startup, services, disk, caches, big consumers
 ├── UI/           # dashboard, rows, menu content, confirmation, history
 └── Support/      # path sizing
-Resources/        # Info.plist (LSUIElement = true)
+Resources/        # Info.plist (LSUIElement = true) and AppIcon.icns
 Tests/            # XCTest unit tests
 scripts/          # build, run, clean, package
 docs/screenshots/ # README screenshots

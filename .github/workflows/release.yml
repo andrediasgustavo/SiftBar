@@ -33,6 +33,8 @@ jobs:
           test -x dist/SiftBar.app/Contents/MacOS/SiftBar
           plutil -lint dist/SiftBar.app/Contents/Info.plist
           codesign --verify --deep --strict --verbose=2 dist/SiftBar.app
+          test -f dist/SiftBar.app/Contents/Resources/AppIcon.icns
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' dist/SiftBar.app/Contents/Info.plist)" = "AppIcon"
           hdiutil verify dist/SiftBar.dmg
 
           MOUNT="$(mktemp -d)"

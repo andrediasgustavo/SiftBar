@@ -40,6 +40,7 @@ rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp "$BUILD_DIR/$APP_NAME" "$APP_DIR/Contents/MacOS/$APP_NAME"
 cp "$ROOT/Resources/Info.plist" "$APP_DIR/Contents/Info.plist"
+cp "$ROOT/Resources/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
 
 echo "==> Signing (ad-hoc)"
 codesign --force --sign - "$APP_DIR" >/dev/null

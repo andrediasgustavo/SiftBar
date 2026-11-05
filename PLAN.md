@@ -330,7 +330,8 @@ only then do we move on.
 - [ ] Keyboard selection/navigation in the review list
 - [ ] Notifications for scan completion (only when appropriate)
 - [ ] Scheduling with `launchd`
-- [ ] Custom app icon; "monitor only" mode
+- [x] Custom app icon
+- [ ] "Monitor only" mode
 - [ ] Markdown report export
 
 ### Phase 7 — Distribution ✅
