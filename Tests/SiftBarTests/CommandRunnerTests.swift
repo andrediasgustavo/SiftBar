@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 @testable import SiftBar
 
@@ -21,6 +22,29 @@ final class CommandRunnerTests: XCTestCase {
 
         XCTAssertEqual(result.stderr.trimmingCharacters(in: .whitespacesAndNewlines), "oops")
         XCTAssertEqual(result.exitCode, 3)
+    }
+
+    func testArgumentsAreNotInterpretedByShell() async throws {
+        let marker = "/tmp/siftbar-\(UUID().uuidString)"
+        let result = try await CommandRunner.run(
+            "/bin/echo",
+            arguments: ["$(whoami)", "; rm -rf \(marker)", "a && b"]
+        )
+
+        XCTAssertEqual(
+            result.stdout.trimmingCharacters(in: .whitespacesAndNewlines),
+            "$(whoami) ; rm -rf \(marker) a && b"
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker))
+    }
+
+    func testEmptyArgumentsArePreserved() async throws {
+        let result = try await CommandRunner.run(
+            "/bin/sh",
+            arguments: ["-c", "printf '<%s>' \"$@\"", "sh", "", "x"]
+        )
+
+        XCTAssertEqual(result.stdout, "<><x>")
     }
 
     func testMissingExecutableThrowsLaunchFailed() async {

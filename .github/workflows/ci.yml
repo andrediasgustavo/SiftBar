@@ -31,8 +31,11 @@ jobs:
       - name: Validate package manifest
         run: swift package dump-package > /dev/null
 
-      - name: Build
+      - name: Build (debug)
         run: swift build
+
+      - name: Build (release)
+        run: swift build -c release
 
       - name: Run tests
         run: swift test --parallel

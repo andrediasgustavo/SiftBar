@@ -1,0 +1,71 @@
+import XCTest
+@testable import SiftBar
+
+final class CacheCollectorTests: XCTestCase {
+    func testTargetsCoverKnownCaches() {
+        let targets = CacheCollector.targets(home: "/Users/tester")
+
+        XCTAssertEqual(targets.count, 8)
+        XCTAssertEqual(targets.first?.name, "npm")
+        XCTAssertEqual(targets.first?.path, "/Users/tester/.npm/_cacache")
+        XCTAssertEqual(targets.first?.risk, .safe)
+        XCTAssertTrue(targets.contains { $0.name == "Homebrew" && $0.risk == .safe })
+        XCTAssertTrue(targets.contains { $0.name == "General" && $0.risk == .caution })
+        XCTAssertTrue(targets.contains { $0.path == "/Library/Developer/CoreSimulator/Caches" })
+    }
+
+    func testTargetsUseTheProvidedHomeDirectory() {
+        let targets = CacheCollector.targets(home: "/tmp/home")
+
+        XCTAssertTrue(targets.allSatisfy { $0.path.hasPrefix("/tmp/home") || $0.path.hasPrefix("/Library") })
+    }
+
+    func testItemsAreSortedBySize() {
+        let measured = [
+            CacheCollector.Measured(
+                target: .init(name: "npm", path: "/tmp/npm", risk: .safe),
+                bytes: 10 * 1024 * 1024
+            ),
+            CacheCollector.Measured(
+                target: .init(name: "Homebrew", path: "/tmp/brew", risk: .safe),
+                bytes: 500 * 1024 * 1024
+            )
+        ]
+
+        let items = CacheCollector.items(from: measured)
+
+        XCTAssertEqual(items.map(\.title), ["Homebrew cache", "npm cache"])
+        XCTAssertEqual(items[0].impactBytes, 500 * 1024 * 1024)
+        XCTAssertEqual(items[1].impactBytes, 10 * 1024 * 1024)
+    }
+
+    func testItemsUseDeletePathActionAndEvidence() {
+        let target = CacheCollector.Target(name: "Xcode DerivedData", path: "/tmp/DerivedData", risk: .safe)
+        let items = CacheCollector.items(from: [
+            CacheCollector.Measured(target: target, bytes: 42)
+        ])
+
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items[0].category, .caches)
+        XCTAssertEqual(items[0].risk, .safe)
+        XCTAssertEqual(items[0].action, .deletePath(path: "/tmp/DerivedData", bytes: 42))
+        XCTAssertEqual(items[0].evidence, "du -sk /tmp/DerivedData")
+    }
+
+    func testTargetNameAlreadyEndingInCacheIsNotDuplicated() {
+        let target = CacheCollector.Target(name: "User Cache", path: "/tmp/cache", risk: .caution)
+        let items = CacheCollector.items(from: [
+            CacheCollector.Measured(target: target, bytes: 1)
+        ])
+
+        XCTAssertEqual(items[0].title, "User Cache")
+    }
+
+    func testMinimumCacheSizeIsTwentyMegabytes() {
+        XCTAssertEqual(CacheCollector.minimumBytes, 20 * 1024 * 1024)
+    }
+
+    func testEmptyMeasuredListProducesNoItems() {
+        XCTAssertTrue(CacheCollector.items(from: []).isEmpty)
+    }
+}

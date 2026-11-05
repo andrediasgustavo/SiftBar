@@ -28,7 +28,18 @@ enum ScanCoordinator {
             return all
         }
 
-        let sorted = items.sorted { lhs, rhs in
+        return ScanReport(
+            generatedAt: Date(),
+            items: sort(items),
+            memory: snapshot.memory,
+            disk: snapshot.disk
+        )
+    }
+
+    /// Groups items by category order, then by impact (largest first), then
+    /// alphabetically. Items without a byte impact sort after those with one.
+    static func sort(_ items: [ScanItem]) -> [ScanItem] {
+        items.sorted { lhs, rhs in
             if lhs.category.sortOrder != rhs.category.sortOrder {
                 return lhs.category.sortOrder < rhs.category.sortOrder
             }
@@ -39,12 +50,5 @@ enum ScanCoordinator {
             }
             return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
         }
-
-        return ScanReport(
-            generatedAt: Date(),
-            items: sorted,
-            memory: snapshot.memory,
-            disk: snapshot.disk
-        )
     }
 }

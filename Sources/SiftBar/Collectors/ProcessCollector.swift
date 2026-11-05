@@ -3,14 +3,18 @@ import Foundation
 struct ProcessCollector: Collector {
     let category: ItemCategory = .processes
 
-    private let minimumBytes: Int64 = 150 * 1024 * 1024
-    private let limit = 12
+    static let minimumBytes: Int64 = 150 * 1024 * 1024
+    static let limit = 12
 
-    private struct Entry {
+    struct Entry: Sendable, Equatable {
         let pid: Int32
         let user: String
         let bytes: Int64
         let command: String
+
+        var name: String {
+            (command as NSString).lastPathComponent
+        }
     }
 
     func collect() async -> [ScanItem] {
@@ -20,15 +24,22 @@ struct ProcessCollector: Collector {
             timeout: 10
         ), result.exitCode == 0 else { return [] }
 
+        return Self.items(from: Self.parse(result.stdout))
+    }
+
+    /// Parses `ps -Ao pid=,user=,rss=,comm=` output. Malformed lines are skipped.
+    static func parse(_ output: String) -> [Entry] {
         var entries: [Entry] = []
-        for line in result.stdout.split(separator: "\n") {
+
+        for line in output.split(separator: "\n") {
             let parts = line
                 .split(separator: " ", maxSplits: 3, omittingEmptySubsequences: true)
                 .map(String.init)
 
             guard parts.count == 4,
                   let pid = Int32(parts[0]),
-                  let rssKilobytes = Int64(parts[2]) else { continue }
+                  let rssKilobytes = Int64(parts[2]),
+                  rssKilobytes >= 0 else { continue }
 
             entries.append(Entry(
                 pid: pid,
@@ -38,6 +49,10 @@ struct ProcessCollector: Collector {
             ))
         }
 
+        return entries
+    }
+
+    static func items(from entries: [Entry]) -> [ScanItem] {
         var items: [ScanItem] = [
             ScanItem(
                 category: .processes,
@@ -57,17 +72,14 @@ struct ProcessCollector: Collector {
             .prefix(limit)
 
         for entry in heavy {
-            let name = (entry.command as NSString).lastPathComponent
-            let risk: Risk = entry.bytes >= 1_000_000_000 ? .caution : .safe
-
             items.append(ScanItem(
                 category: .processes,
-                title: name,
-                detail: "PID \(entry.pid) · \(entry.user) · \(formatted(entry.bytes)) resident",
-                impactLabel: formatted(entry.bytes),
+                title: entry.name,
+                detail: "PID \(entry.pid) · \(entry.user) · \(format(entry.bytes)) resident",
+                impactLabel: format(entry.bytes),
                 impactBytes: entry.bytes,
-                risk: risk,
-                action: .killProcess(pid: entry.pid, name: name),
+                risk: risk(for: entry.bytes),
+                action: .killProcess(pid: entry.pid, name: entry.name),
                 evidence: "ps -Ao pid,user,rss,comm"
             ))
         }
@@ -75,7 +87,13 @@ struct ProcessCollector: Collector {
         return items
     }
 
-    private func formatted(_ bytes: Int64) -> String {
+    /// Processes at or above 1 GB are flagged as caution because quitting them
+    /// can lose unsaved work; smaller ones are informational.
+    static func risk(for bytes: Int64) -> Risk {
+        bytes >= 1_000_000_000 ? .caution : .safe
+    }
+
+    static func format(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .memory)
     }
 }

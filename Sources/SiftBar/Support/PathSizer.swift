@@ -10,11 +10,16 @@ enum PathSizer {
             timeout: timeout
         ) else { return nil }
 
-        let field = result.stdout
+        return parseDU(result.stdout)
+    }
+
+    /// Parses the kilobyte count from `du -sk` output and converts it to bytes.
+    static func parseDU(_ output: String) -> Int64? {
+        let field = output
             .split(whereSeparator: { $0 == "\t" || $0 == " " })
             .first ?? ""
 
-        guard let kilobytes = Int64(field) else { return nil }
+        guard let kilobytes = Int64(field), kilobytes >= 0 else { return nil }
         return kilobytes * 1024
     }
 }

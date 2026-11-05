@@ -15,9 +15,15 @@ struct BrewCollector: Collector {
             timeout: 20
         ), result.exitCode == 0 else { return [] }
 
+        return Self.parse(result.stdout)
+    }
+
+    /// Parses `brew services list`. Only running, errored, or scheduled
+    /// services are reported; stopped services need no attention.
+    static func parse(_ output: String) -> [ScanItem] {
         var items: [ScanItem] = []
 
-        for line in result.stdout.split(separator: "\n").dropFirst() {
+        for line in output.split(separator: "\n") {
             let parts = line
                 .split(whereSeparator: { $0 == " " || $0 == "\t" })
                 .map(String.init)
@@ -26,6 +32,9 @@ struct BrewCollector: Collector {
 
             let name = parts[0]
             let status = parts[1]
+
+            // Header row: Name Status User File
+            guard name != "Name" else { continue }
             guard status == "started" || status == "error" || status == "scheduled" else { continue }
 
             let user = parts.count >= 3 ? parts[2] : "-"

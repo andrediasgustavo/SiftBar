@@ -1,6 +1,6 @@
 import Foundation
 
-enum Risk: String, Codable, CaseIterable, Sendable {
+enum Risk: String, Codable, CaseIterable, Equatable, Sendable {
     case safe
     case caution
     case dangerous
@@ -14,7 +14,7 @@ enum Risk: String, Codable, CaseIterable, Sendable {
     }
 }
 
-enum ItemCategory: String, Codable, CaseIterable, Sendable {
+enum ItemCategory: String, Codable, CaseIterable, Equatable, Sendable {
     case memory
     case processes
     case startup
@@ -69,7 +69,7 @@ enum ItemAction: Sendable, Equatable {
     case deletePath(path: String, bytes: Int64)
 }
 
-struct ScanItem: Identifiable, Sendable {
+struct ScanItem: Identifiable, Equatable, Sendable {
     let id: UUID
     let category: ItemCategory
     let title: String

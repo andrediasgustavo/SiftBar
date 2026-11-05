@@ -3,11 +3,23 @@ import Foundation
 struct StartupCollector: Collector {
     let category: ItemCategory = .startup
 
+    static let failingLimit = 12
+    static let launchItemLimit = 30
+
     func collect() async -> [ScanItem] {
         var items: [ScanItem] = []
         items.append(contentsOf: await failingItems())
-        items.append(contentsOf: await thirdPartyLaunchItems(limit: 30))
+        items.append(contentsOf: Self.launchItems(in: Self.defaultDirectories()))
         return items
+    }
+
+    static func defaultDirectories() -> [String] {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return [
+            "\(home)/Library/LaunchAgents",
+            "/Library/LaunchAgents",
+            "/Library/LaunchDaemons"
+        ]
     }
 
     private func failingItems() async -> [ScanItem] {
@@ -17,20 +29,29 @@ struct StartupCollector: Collector {
             timeout: 10
         ), result.exitCode == 0 else { return [] }
 
+        return Self.parseFailingItems(result.stdout)
+    }
+
+    /// Parses `launchctl list` output. Apple agents are skipped because macOS
+    /// manages them and they often report transient SIGKILL exit statuses.
+    static func parseFailingItems(_ output: String, limit: Int = failingLimit) -> [ScanItem] {
         var items: [ScanItem] = []
-        for line in result.stdout.split(separator: "\n").dropFirst() {
+
+        for line in output.split(separator: "\n") {
             let parts = line
                 .split(separator: "\t", omittingEmptySubsequences: false)
                 .map { $0.trimmingCharacters(in: .whitespaces) }
 
             guard parts.count >= 3 else { continue }
+
             let status = parts[1]
             let label = parts[2]
 
-            // Apple agents are managed by macOS and often report transient
-            // SIGKILL statuses; surfacing them would only create noise.
+            // Header row: PID <tab> Status <tab> Label
+            guard parts[0] != "PID" else { continue }
+            guard !label.isEmpty else { continue }
             guard !label.hasPrefix("com.apple.") else { continue }
-            guard !label.isEmpty, status != "0", status != "-" else { continue }
+            guard status != "0", status != "-" else { continue }
 
             items.append(ScanItem(
                 category: .startup,
@@ -43,24 +64,23 @@ struct StartupCollector: Collector {
                 evidence: "launchctl list"
             ))
 
-            if items.count >= 12 { break }
+            if items.count >= limit { break }
         }
+
         return items
     }
 
-    private func thirdPartyLaunchItems(limit: Int) async -> [ScanItem] {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let directories = [
-            "\(home)/Library/LaunchAgents",
-            "/Library/LaunchAgents",
-            "/Library/LaunchDaemons"
-        ]
-
+    /// Lists third-party launch agents and daemons found in the given folders.
+    static func launchItems(
+        in directories: [String],
+        limit: Int = launchItemLimit,
+        fileManager: FileManager = .default
+    ) -> [ScanItem] {
         var items: [ScanItem] = []
         var seen = Set<String>()
 
         for directory in directories {
-            guard let files = try? FileManager.default.contentsOfDirectory(atPath: directory) else { continue }
+            guard let files = try? fileManager.contentsOfDirectory(atPath: directory) else { continue }
 
             for file in files.sorted() where file.hasSuffix(".plist") {
                 let label = String(file.dropLast(".plist".count))

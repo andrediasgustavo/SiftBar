@@ -23,7 +23,7 @@ enum SystemProbe {
 
         let totalMemory = UInt64(memoryResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
         let vm = parseVMStat(vmResult.stdout)
-        let usedMemory = min(vm.wired + vm.active + vm.compressed, totalMemory)
+        let usedMemory = min(vm.usedBytes, totalMemory)
         let swapUsed = parseSwapUsed(swapResult.stdout) ?? 0
         let memoryPressure = parsePressure(pressureResult.stdout)
         let disk = try parseDisk(diskResult.stdout)
@@ -39,14 +39,19 @@ enum SystemProbe {
         )
     }
 
-    private struct VMStat {
-        let wired: UInt64
-        let active: UInt64
-        let compressed: UInt64
-        let free: UInt64
+    struct VMStat: Sendable, Equatable {
+        let pageSize: UInt64
+        let wiredBytes: UInt64
+        let activeBytes: UInt64
+        let compressedBytes: UInt64
+        let freeBytes: UInt64
+
+        var usedBytes: UInt64 {
+            wiredBytes + activeBytes + compressedBytes
+        }
     }
 
-    private static func parseVMStat(_ output: String) -> VMStat {
+    static func parseVMStat(_ output: String) -> VMStat {
         let lines = output.split(separator: "\n")
 
         var pageSize: UInt64 = 4096
@@ -72,10 +77,11 @@ enum SystemProbe {
         let free = pages("Pages free:") + pages("Pages speculative:")
 
         return VMStat(
-            wired: wired * pageSize,
-            active: active * pageSize,
-            compressed: compressed * pageSize,
-            free: free * pageSize
+            pageSize: pageSize,
+            wiredBytes: wired * pageSize,
+            activeBytes: active * pageSize,
+            compressedBytes: compressed * pageSize,
+            freeBytes: free * pageSize
         )
     }
 
@@ -102,7 +108,7 @@ enum SystemProbe {
         return UInt64(trimmed)
     }
 
-    private static func parsePressure(_ output: String) -> MemoryPressure {
+    static func parsePressure(_ output: String) -> MemoryPressure {
         for line in output.split(separator: "\n") where line.contains("System-wide memory free percentage") {
             let digits = line.filter { $0.isNumber }
             guard let percent = Int(digits) else { break }
@@ -118,7 +124,7 @@ enum SystemProbe {
         try parseDisk(output).freeBytes
     }
 
-    private static func parseDisk(_ output: String) throws -> DiskStats {
+    static func parseDisk(_ output: String) throws -> DiskStats {
         let lines = output.split(separator: "\n")
         guard lines.count >= 2 else { throw ProbeError.unexpectedOutput("df") }
 

@@ -117,10 +117,15 @@ Unit tests live in `Tests/SiftBarTests/` and use XCTest. Run them with:
 swift test
 ```
 
+The suite covers command execution, every parser (`vm_stat`, swap, `df`,
+`ps`, `launchctl`, `brew services`, `du`), risk thresholds, duplicate
+detection, sorting, and a live read-only scan.
+
 The GitHub Actions workflow at `.github/workflows/ci.yml` runs on every push
 and pull request to `main`:
 
-1. **Build and test** — `swift build` and `swift test` on `macos-15`.
+1. **Build and test** — `swift build`, `swift build -c release`, and
+   `swift test --parallel` on `macos-15`.
 2. **Validate** — shell syntax checks, `plutil -lint` on `Info.plist`, a full
    `scripts/build.sh release`, bundle structure and `LSUIElement` checks, and
    `codesign --verify`. The signed `.app` is uploaded as a workflow artifact.
