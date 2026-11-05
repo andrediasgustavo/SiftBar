@@ -110,7 +110,7 @@ SiftBar/
 │       └── PathSizer.swift
 ├── Resources/
 │   └── Info.plist                    # LSUIElement = true
-├── Tests/SiftBarTests/               # 158 XCTest cases
+├── Tests/SiftBarTests/               # 167 XCTest cases
 └── scripts/
     ├── build.sh                      # direct swiftc build + .app assembly + ad-hoc sign
     ├── run.sh                        # build + open
@@ -127,7 +127,7 @@ SiftBar/
 | Concurrency | `async/await` + `TaskGroup` | Collectors run in parallel, UI stays responsive |
 | Command execution | `Process` with an executable and an argument array | No shell, no argument injection |
 | Timeout | 10 s per collector / 30 s per action | The app must not hang |
-| Persistence | None yet; JSON history planned for Phase 6 | Simple and auditable |
+| Persistence | JSON history in `~/Library/Application Support/SiftBar/history.json` | Simple and auditable |
 | Logging | Not implemented yet | Planned with history |
 | Distribution | Ad-hoc signed DMG via GitHub Releases | No paid developer account yet |
 
@@ -147,6 +147,7 @@ enum ItemAction: Equatable {
     case killProcess(pid: Int32, name: String)
     case removeLoginItem(name: String)      // declared, not collected yet
     case disableLaunchItem(label: String)
+    case enableLaunchItem(label: String)
     case stopService(name: String)
     case deletePath(path: String, bytes: Int64)
 }
@@ -161,6 +162,7 @@ struct ScanItem: Identifiable {
     let risk: Risk
     let action: ItemAction
     let evidence: String           // command or path that produced the item
+    let children: [ScanItem]       // per-PID rows for grouped processes
 }
 ```
 
@@ -175,7 +177,7 @@ struct ScanItem: Identifiable {
 |---|---|---|
 | Memory | `vm_stat`, `sysctl vm.swapusage`, `memory_pressure` | pressure, swap used, pages |
 | Processes | `ps -Ao pid=,user=,rss=,comm=` | processes above 150 MB, grouped by executable, top 12 |
-| Startup | `launchctl list`, `~/Library/LaunchAgents`, `/Library/LaunchAgents`, `/Library/LaunchDaemons`, `launchctl print-disabled` | failing labels and third-party launch items; disabled labels are skipped |
+| Startup | `launchctl list`, `~/Library/LaunchAgents`, `/Library/LaunchAgents`, `/Library/LaunchDaemons`, `launchctl print-disabled` | failing labels and third-party launch items; disabled labels appear as disabled with an enable action |
 | Services | `brew services list` | started, errored, or scheduled services |
 | Disk | `df -k` | free/used space and usage risk |
 | Caches | Fixed whitelist (npm, Expo, Xcode DerivedData, Gradle, Homebrew, CoreSimulator, general caches) | size per cache above 20 MB |
@@ -218,14 +220,16 @@ process count.
 3. Confirmation: `Safe` and `Caution` require the explicit action button;
    `Dangerous`, admin-only, and read-only items have no checkbox.
 4. Actions run sequentially with a timeout; each result is reported.
-5. The app rescans and shows a result card with reclaimed bytes and failures.
+5. The app rescans, shows a result card with reclaimed bytes and failures, and
+   appends the batch to the audit history.
 
 **Implemented actions:**
 
 | Action | Command / behavior |
 |---|---|
-| Quit process | `/bin/kill -TERM <pid>` (single-PID groups only) |
+| Quit process | `/bin/kill -TERM <pid>`; grouped rows expand into per-PID rows |
 | Disable launch item | `launchctl bootout gui/<uid>/<label>` then `launchctl disable gui/<uid>/<label>` |
+| Enable launch item | `launchctl enable gui/<uid>/<label>` then `launchctl bootstrap gui/<uid> <plist>` |
 | Stop Homebrew service | `brew services stop <name>` |
 | Remove cache | Move the folder to the Trash (reversible) |
 
@@ -239,7 +243,8 @@ process count.
 - No shell interpolation: every command uses an executable plus an argument
   array.
 - Confirm before every batch; no automatic cleanup.
-- History/audit logging is not implemented yet (Phase 6).
+- Append every batch to `~/Library/Application Support/SiftBar/history.json`
+  so actions remain auditable.
 
 ---
 
@@ -275,7 +280,10 @@ only then do we move on.
 
 ### Phase 3 — Safe actions (≈ 1–2 h) ✅
 - [x] Quit single-PID processes with `kill -TERM`
+- [x] Expand grouped process rows and quit individual PIDs
 - [x] Disable user launch agents with `launchctl bootout` + `disable`
+- [x] Enable disabled launch agents again with `launchctl enable` +
+  `bootstrap`
 - [x] Stop Homebrew services with `brew services stop`
 - [x] Move cache folders to the Trash
 - [x] Command preview, confirmation sheet, per-item results, rescan, and result
@@ -304,9 +312,11 @@ only then do we move on.
   when denied.
 
 ### Phase 6 — History and polish (optional) ⏳
-- [ ] History/audit log (JSON in Application Support) — highest priority here
-- [ ] Menu bar commands and shortcuts (`⌘R` Analyze, `⌘F` Find, `⌘C` Copy
-  evidence)
+- [x] History/audit log: JSON in Application Support, plus a read-only History
+  sheet
+- [x] Keyboard shortcuts: `⌘R` Analyze, `⌘Y` History, `⌘F` Find; History item
+  in the menu bar popover
+- [ ] Full AppKit menu bar (SwiftUI `MenuBarExtra` owns the main menu)
 - [ ] Keyboard selection/navigation in the review list
 - [ ] Notifications for scan completion (only when appropriate)
 - [ ] Scheduling with `launchd`
@@ -325,14 +335,14 @@ only then do we move on.
 
 - **Unit tests:** parsers for `vm_stat`, `ps`, `launchctl`, `brew services`;
   risk rules; review filters; process safety; action previews and selection;
-  disabled launch labels.
+  grouped-process children; disabled/enabled launch labels; history storage.
 - **Integration tests:** each collector against real data; `CommandRunner` with
   timeouts and invalid arguments; a full scan.
 - **Safety tests:** protected PIDs, admin-only items, read-only items, and
   path/command construction.
 - **Manual tests:** compare numbers with Activity Monitor, `top`, `df`, and
   `launchctl list`; verify Finder reveal and confirmation flows.
-- **Current suite:** 158 XCTest cases. CI runs `swift build`,
+- **Current suite:** 167 XCTest cases. CI runs `swift build`,
   `swift build -c release`, `swift test --parallel`, and validates the app and
   DMG.
 - **Gaps:** no automated UI tests; destructive actions are not executed in
@@ -351,8 +361,8 @@ only then do we move on.
 | Numbers differ from Finder | Explain category vs. folder (the "15 GB in Documents" lesson) |
 | Ad-hoc signing triggers Gatekeeper | Document right-click → Open; notarize when a Developer ID exists |
 | Privileged helper is not shippable without signing | Defer Phase 5 until Developer ID + notarization |
-| Grouped process rows cannot be quit | Planned: per-PID expansion |
-| No history yet | Planned for Phase 6; results are shown but not persisted |
+| Full AppKit menu bar is unavailable | SwiftUI `MenuBarExtra` owns the main menu; shortcuts and the popover cover the commands |
+| History is append-only | A corrupted file is ignored; there is no UI to clear it yet |
 | App becomes heavy | Timeouts, parallel collectors, on-demand UI |
 
 ---
@@ -363,11 +373,11 @@ Recommended order:
 
 1. Finish **Phase 4**: disk cleanup (largest files/folders) and enforce the
    path whitelist in the executor.
-2. Add **history/audit** (Phase 6) so every action is traceable.
-3. Add menu bar commands and keyboard shortcuts (`⌘R`, `⌘F`, `⌘C`).
-4. Then notifications, scheduling, and a custom icon.
-5. Leave the privileged helper (Phase 5) until a Developer ID and notarization
-   are available.
+2. Add keyboard selection/navigation in the review list.
+3. Add notifications, scheduling, and a custom icon.
+4. Add login item removal when TCC behavior is acceptable.
+5. Leave the privileged helper (Phase 5) and notarization until a Developer ID
+   is available.
 
 > "SiftBar" is still a provisional name. If it changes, the folder, target,
 > bundle ID, and release names change with it.

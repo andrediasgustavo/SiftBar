@@ -65,6 +65,7 @@ enum ItemAction: Sendable, Equatable {
     case killProcess(pid: Int32, name: String)
     case removeLoginItem(name: String)
     case disableLaunchItem(label: String)
+    case enableLaunchItem(label: String)
     case stopService(name: String)
     case deletePath(path: String, bytes: Int64)
 }
@@ -79,6 +80,8 @@ struct ScanItem: Identifiable, Equatable, Sendable {
     let risk: Risk
     let action: ItemAction
     let evidence: String
+    /// Per-process rows for grouped processes. Empty for every other item.
+    let children: [ScanItem]
 
     init(
         id: UUID = UUID(),
@@ -89,7 +92,8 @@ struct ScanItem: Identifiable, Equatable, Sendable {
         impactBytes: Int64?,
         risk: Risk,
         action: ItemAction,
-        evidence: String
+        evidence: String,
+        children: [ScanItem] = []
     ) {
         self.id = id
         self.category = category
@@ -100,6 +104,7 @@ struct ScanItem: Identifiable, Equatable, Sendable {
         self.risk = risk
         self.action = action
         self.evidence = evidence
+        self.children = children
     }
 
     /// Dangerous items are informational only; even if a collector attaches an

@@ -36,6 +36,10 @@ enum ActionExecutor {
             let domain = "gui/\(getuid())"
             return "launchctl bootout \(domain)/\(label)\nlaunchctl disable \(domain)/\(label)"
 
+        case .enableLaunchItem(let label):
+            let domain = "gui/\(getuid())"
+            return "launchctl enable \(domain)/\(label)"
+
         case .stopService(let name):
             return "brew services stop \(name)"
 
@@ -44,12 +48,35 @@ enum ActionExecutor {
         }
     }
 
+    /// Item-aware preview. Enabling a launch item can also bootstrap its plist,
+    /// so show the real path when the file exists.
+    static func preview(for item: ScanItem) -> String {
+        guard case .enableLaunchItem(let label) = item.action else {
+            return preview(for: item.action)
+        }
+
+        let domain = "gui/\(getuid())"
+        var lines = ["launchctl enable \(domain)/\(label)"]
+
+        if item.evidence.hasPrefix("/") {
+            let plist = URL(fileURLWithPath: item.evidence)
+                .appendingPathComponent("\(label).plist")
+
+            if FileManager.default.fileExists(atPath: plist.path) {
+                lines.append("launchctl bootstrap \(domain) \(plist.path)")
+            }
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
     static func verb(for action: ItemAction) -> String {
         switch action {
         case .none: return "Change"
         case .killProcess: return "Quit"
         case .removeLoginItem: return "Remove"
         case .disableLaunchItem: return "Disable"
+        case .enableLaunchItem: return "Enable"
         case .stopService: return "Stop"
         case .deletePath: return "Move to Trash"
         }
@@ -65,6 +92,7 @@ enum ActionExecutor {
         case .killProcess: return "Quit Process…"
         case .removeLoginItem: return "Remove Login Item…"
         case .disableLaunchItem: return "Disable Launch Item…"
+        case .enableLaunchItem: return "Enable Launch Item…"
         case .stopService: return "Stop Service…"
         case .deletePath: return "Move to Trash…"
         }
@@ -117,6 +145,33 @@ enum ActionExecutor {
                 timeout: 30,
                 successMessage: "Stopped \(name)."
             )
+
+        case .enableLaunchItem(let label):
+            let domain = "gui/\(getuid())"
+
+            let enabled = await run(
+                item,
+                executable: "/bin/launchctl",
+                arguments: ["enable", "\(domain)/\(label)"],
+                successMessage: "Enabled \(label)."
+            )
+            guard enabled.success else { return enabled }
+
+            // Load the agent immediately when the plist is still on disk.
+            if item.evidence.hasPrefix("/") {
+                let plist = URL(fileURLWithPath: item.evidence)
+                    .appendingPathComponent("\(label).plist")
+
+                if FileManager.default.fileExists(atPath: plist.path) {
+                    _ = try? await CommandRunner.run(
+                        "/bin/launchctl",
+                        arguments: ["bootstrap", domain, plist.path],
+                        timeout: 10
+                    )
+                }
+            }
+
+            return enabled
 
         case .deletePath(let path, _):
             do {
@@ -176,10 +231,12 @@ extension ScanItem {
     /// System-wide launch items need admin rights. SiftBar does not request
     /// privileges, so it shows them but refuses to change them.
     var requiresAdmin: Bool {
-        if case .disableLaunchItem = action {
+        switch action {
+        case .disableLaunchItem, .enableLaunchItem:
             return evidence.hasPrefix("/Library/")
+        default:
+            return false
         }
-        return false
     }
 
     var canBeChanged: Bool {
@@ -195,7 +252,7 @@ extension ScanItem {
         case .deletePath(let path, _):
             return URL(fileURLWithPath: path)
 
-        case .disableLaunchItem(let label):
+        case .disableLaunchItem(let label), .enableLaunchItem(let label):
             guard evidence.hasPrefix("/") else { return nil }
             let directory = URL(fileURLWithPath: evidence)
             let plist = directory.appendingPathComponent("\(label).plist")

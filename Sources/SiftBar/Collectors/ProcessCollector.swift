@@ -137,11 +137,14 @@ struct ProcessCollector: Collector {
                 ? .none
                 : .killProcess(pid: entry.pid, name: entry.name)
         } else {
-            detail = "\(count) processes · \(group.userLabel) · \(format(group.bytes)) resident.\(protectedSuffix)"
-            // A group can contain several PIDs, so there is no single safe
-            // process to terminate. Phase 3 will offer per-process expansion.
+            detail = "\(count) processes · \(group.userLabel) · \(format(group.bytes)) resident. Expand to quit individual processes.\(protectedSuffix)"
+            // The group itself is not actionable; each child carries one PID.
             action = .none
         }
+
+        let children = count > 1
+            ? group.entries.map { child(for: $0, in: group) }
+            : []
 
         return ScanItem(
             category: .processes,
@@ -151,6 +154,25 @@ struct ProcessCollector: Collector {
             impactBytes: group.bytes,
             risk: group.risk,
             action: action,
+            evidence: "ps -Ao pid,user,rss,comm",
+            children: children
+        )
+    }
+
+    static func child(for entry: Entry, in group: Group) -> ScanItem {
+        let protected = ProcessSafety.isProtected(entry)
+        let protectedSuffix = protected
+            ? " Protected system process — SiftBar will never terminate it."
+            : ""
+
+        return ScanItem(
+            category: .processes,
+            title: "\(group.name) · PID \(entry.pid)",
+            detail: "PID \(entry.pid) · \(entry.user) · \(format(entry.bytes)) resident.\(protectedSuffix)",
+            impactLabel: format(entry.bytes),
+            impactBytes: entry.bytes,
+            risk: protected ? .dangerous : risk(for: entry.bytes),
+            action: protected ? .none : .killProcess(pid: entry.pid, name: entry.name),
             evidence: "ps -Ao pid,user,rss,comm"
         )
     }

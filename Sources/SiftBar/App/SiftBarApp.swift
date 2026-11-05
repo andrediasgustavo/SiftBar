@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 @main
@@ -50,4 +51,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
+}
+
+extension Notification.Name {
+    static let siftBarShowHistory = Notification.Name("SiftBarShowHistory")
+    static let siftBarFocusSearch = Notification.Name("SiftBarFocusSearch")
 }

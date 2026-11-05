@@ -85,6 +85,46 @@ final class ProcessCollectorTests: XCTestCase {
         XCTAssertEqual(name, "Google Chrome")
     }
 
+    func testGroupedProcessesExposePerPIDChildren() throws {
+        let entries = [
+            ProcessCollector.Entry(
+                pid: 101,
+                user: "example",
+                bytes: 600_000_000,
+                command: "/Applications/Example.app/Contents/Helper"
+            ),
+            ProcessCollector.Entry(
+                pid: 102,
+                user: "example",
+                bytes: 500_000_000,
+                command: "/Applications/Example.app/Contents/Helper"
+            ),
+            ProcessCollector.Entry(
+                pid: 103,
+                user: "root",
+                bytes: 400_000_000,
+                command: "/Applications/Example.app/Contents/Helper"
+            )
+        ]
+
+        let group = try XCTUnwrap(ProcessCollector.groups(from: entries).first)
+        let parent = ProcessCollector.item(for: group)
+
+        XCTAssertEqual(parent.action, .none)
+        XCTAssertEqual(parent.children.count, 3)
+
+        let first = parent.children[0]
+        XCTAssertTrue(first.title.contains("PID 101"))
+        guard case .killProcess(let pid, _) = first.action else {
+            return XCTFail("Expected a per-PID kill action.")
+        }
+        XCTAssertEqual(pid, 101)
+
+        let protected = try XCTUnwrap(parent.children.first { $0.detail.contains("root") })
+        XCTAssertEqual(protected.risk, .dangerous)
+        XCTAssertEqual(protected.action, .none)
+    }
+
     func testItemsRespectTheDisplayLimit() {
         let entries = (0..<20).map { index in
             ProcessCollector.Entry(

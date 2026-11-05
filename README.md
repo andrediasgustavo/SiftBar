@@ -100,11 +100,16 @@ in **System Settings → Privacy & Security**.
 3. Press **Analyze** and review the findings. The scan is read-only.
 4. Filter by risk, search across titles/details/evidence, or use the folder
    button to reveal a path in Finder.
-5. Select changeable items with the checkboxes, then use the action bar at the
+5. Grouped processes show a chevron; expand the row to quit a specific PID.
+   Disabled launch items appear as **Disabled launch item** and can be enabled
+   again.
+6. Select changeable items with the checkboxes, then use the action bar at the
    bottom.
-6. Review the commands and confirm. SiftBar runs them, rescans, and shows the
+7. Review the commands and confirm. SiftBar runs them, rescans, and shows the
    result.
-7. Press **Quit SiftBar** (`⌘Q`) to exit.
+8. Open **History** (`⌘Y`) to see previous actions; `⌘R` runs a new analysis
+   and `⌘F` focuses search.
+9. Press **Quit SiftBar** (`⌘Q`) to exit.
 
 ---
 
@@ -165,12 +170,12 @@ Use the table below to find where each value lives.
 | Output location | `dist/SiftBar.app` | `scripts/build.sh` → `APP_DIR` |
 | Signing | ad-hoc (`codesign -s -`) | `scripts/build.sh` → final `codesign` call; use a Developer ID for distribution |
 
-Planned runtime locations (Phase 6):
+Runtime data:
 
 | Data | Path |
 |---|---|
 | History | `~/Library/Application Support/SiftBar/history.json` |
-| Logs | `~/Library/Logs/SiftBar/` |
+| Logs | `~/Library/Logs/SiftBar/` (planned) |
 
 ## Tests and CI
 
@@ -180,11 +185,11 @@ Unit tests live in `Tests/SiftBarTests/` and use XCTest. Run them with:
 swift test
 ```
 
-The suite has 158 tests covering command execution, every parser (`vm_stat`,
+The suite has 167 tests covering command execution, every parser (`vm_stat`,
 swap, `df`, `ps`, `launchctl`, `brew services`, `du`), risk thresholds,
-protected-process rules, duplicate detection, grouping, filtering, search,
-sorting, action previews, selection rules, disabled launch labels, and a live
-read-only scan.
+protected-process rules, duplicate detection, grouping, per-PID children,
+filtering, search, sorting, action previews, selection rules, disabled/enabled
+launch labels, history storage, and a live read-only scan.
 
 The GitHub Actions workflow at `.github/workflows/ci.yml` runs on every push
 and pull request to `main`:
@@ -205,9 +210,9 @@ Release for that tag.
 ```
 Sources/SiftBar/
 ├── App/          # entry point, state, dashboard window
-├── Core/         # models, command runner, probes, filters, action executor
+├── Core/         # models, command runner, probes, filters, executor, history
 ├── Collectors/   # memory, processes, startup, services, disk, caches, leftovers
-├── UI/           # dashboard, rows, menu content, confirmation, action model
+├── UI/           # dashboard, rows, menu content, confirmation, history
 └── Support/      # path sizing
 Resources/        # Info.plist (LSUIElement = true)
 Tests/            # XCTest unit tests
@@ -223,10 +228,10 @@ docs/screenshots/ # README screenshots
 | 0 | Skeleton, menu bar, build pipeline, read-only probe | ✅ |
 | 1 | Collectors: memory, processes, startup, brew, disk, caches, leftovers | ✅ |
 | 2 | Risk classification, process grouping, filters, and search | ✅ |
-| 3 | Safe actions with preview (processes, launchctl, brew services) | ✅ login items pending |
+| 3 | Safe actions with preview (processes, launchctl, brew services) | ✅ per-PID and enable; login items pending |
 | 4 | Cache and disk cleanup with whitelist | ⏳ caches done; disk cleanup pending |
 | 5 | Optional privileged helper for system-level actions | ⏸ blocked on Developer ID |
-| 6 | History, menu commands, scheduling, notifications, icon | ⏳ |
+| 6 | History, menu commands, scheduling, notifications, icon | ⏳ history and shortcuts done |
 | 7 | Distribution: DMG and GitHub Releases | ✅ notarization pending |
 
 The detailed plan, architecture, guardrails, and acceptance criteria live in

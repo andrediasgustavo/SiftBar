@@ -26,7 +26,7 @@ struct ActionConfirmationView: View {
                                     .foregroundStyle(.secondary)
                             }
 
-                            Text(ActionExecutor.preview(for: item.action))
+                            Text(ActionExecutor.preview(for: item))
                                 .font(.system(size: 11, design: .monospaced))
                                 .foregroundStyle(.secondary)
                                 .textSelection(.enabled)

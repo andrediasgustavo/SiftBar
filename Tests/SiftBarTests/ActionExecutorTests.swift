@@ -18,8 +18,50 @@ final class ActionExecutorTests: XCTestCase {
         XCTAssertTrue(preview.contains("com.example.agent"))
     }
 
-    func testPreviewForStopService() {
-        XCTAssertEqual(
+    func testPreviewForEnableLaunchItem() {
+        let preview = ActionExecutor.preview(for: .enableLaunchItem(label: "com.example.agent"))
+
+        XCTAssertTrue(preview.contains("launchctl enable gui/"))
+        XCTAssertTrue(preview.contains("com.example.agent"))
+    }
+
+    func testPreviewForEnableLaunchItemIncludesPlistPath() throws {
+        let directory = try makeTemporaryDirectory()
+        let plist = directory.appendingPathComponent("com.example.agent.plist")
+        try Data("test".utf8).write(to: plist)
+
+        let item = item(
+            action: .enableLaunchItem(label: "com.example.agent"),
+            evidence: directory.path
+        )
+
+        let preview = ActionExecutor.preview(for: item)
+
+        XCTAssertTrue(preview.contains("launchctl enable gui/"))
+        XCTAssertTrue(preview.contains(plist.path))
+    }
+
+    func testEnableVerbAndTitle() {        let item = item(action: .enableLaunchItem(label: "com.example.agent"))
+
+        XCTAssertEqual(ActionExecutor.verb(for: item.action), "Enable")
+        XCTAssertEqual(ActionExecutor.title(for: [item]), "Enable Launch Item…")
+    }
+
+    func testEnableLaunchItemIsChangeableOnlyForUserAgents() {
+        let user = item(
+            action: .enableLaunchItem(label: "com.example.user"),
+            evidence: "/Users/tester/Library/LaunchAgents"
+        )
+        let system = item(
+            action: .enableLaunchItem(label: "com.example.system"),
+            evidence: "/Library/LaunchDaemons"
+        )
+
+        XCTAssertTrue(user.canBeChanged)
+        XCTAssertFalse(system.canBeChanged)
+    }
+
+    func testPreviewForStopService() {        XCTAssertEqual(
             ActionExecutor.preview(for: .stopService(name: "postgresql")),
             "brew services stop postgresql"
         )

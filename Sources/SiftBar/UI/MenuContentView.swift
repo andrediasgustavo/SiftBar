@@ -26,6 +26,15 @@ struct MenuContentView: View {
         .keyboardShortcut("r")
         .disabled(appState.isScanning)
 
+        Button("History…") {
+            DashboardWindowController.shared.show(state: appState)
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                NotificationCenter.default.post(name: .siftBarShowHistory, object: nil)
+            }
+        }
+        .keyboardShortcut("y")
+
         Divider()
 
         Button("Quit SiftBar") {

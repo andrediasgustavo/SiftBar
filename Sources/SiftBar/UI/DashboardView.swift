@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 struct DashboardView: View {
@@ -6,6 +7,9 @@ struct DashboardView: View {
     @StateObject private var page = ReviewPageModel()
     @StateObject private var filter = ReviewFilterModel()
     @StateObject private var actions = ReviewActionModel()
+    @StateObject private var expanded = ExpansionModel()
+    @StateObject private var history = HistoryPanelModel()
+    @StateObject private var searchFocus = SearchFocusModel()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -19,6 +23,21 @@ struct DashboardView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(minWidth: 900, minHeight: 600)
+        .background {
+            VStack {
+                Button("") { Task { await appState.analyze() } }
+                    .keyboardShortcut("r", modifiers: .command)
+
+                Button("") { history.show() }
+                    .keyboardShortcut("y", modifiers: .command)
+
+                Button("") { searchFocus.focus() }
+                    .keyboardShortcut("f", modifiers: .command)
+            }
+            .opacity(0)
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+        }
         .sheet(isPresented: $actions.isConfirming) {
             ActionConfirmationView(
                 items: actions.pending,
@@ -27,8 +46,20 @@ struct DashboardView: View {
                 onConfirm: { confirmActions() }
             )
         }
+        .sheet(isPresented: $history.isPresented) {
+            HistoryView(records: history.records) {
+                history.isPresented = false
+            }
+        }
         .onChange(of: page.category) { _ in
             actions.clear()
+            expanded.clear()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .siftBarShowHistory)) { _ in
+            history.show()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .siftBarFocusSearch)) { _ in
+            searchFocus.focus()
         }
     }
 
@@ -133,6 +164,14 @@ struct DashboardView: View {
                 Spacer(minLength: 12)
 
                 Button {
+                    history.show()
+                } label: {
+                    Label("History", systemImage: "clock.arrow.circlepath")
+                }
+                .buttonStyle(.bordered)
+                .help("Show action history (⌘Y)")
+
+                Button {
                     Task { await appState.analyze() }
                 } label: {
                     Label(appState.isScanning ? "Analyzing…" : "Analyze", systemImage: "magnifyingglass")
@@ -165,7 +204,7 @@ struct DashboardView: View {
 
     private var filterRow: some View {
         HStack(spacing: 10) {
-            SearchField(text: $filter.searchText, placeholder: "Search")
+            SearchField(text: $filter.searchText, placeholder: "Search", focusToken: searchFocus.token)
                 .frame(width: 240, height: 22)
 
             Picker("Risk", selection: $filter.risk) {
@@ -180,8 +219,8 @@ struct DashboardView: View {
 
             Menu("Select") {
                 Button("None") { actions.clear() }
-                Button("All Changeable") { actions.selectAll(filteredItems) }
-                Button("Needs Review") { actions.selectNeedingReview(filteredItems) }
+                Button("All Changeable") { actions.selectAll(flattened(filteredItems)) }
+                Button("Needs Review") { actions.selectNeedingReview(flattened(filteredItems)) }
             }
             .frame(width: 80)
 
@@ -228,21 +267,42 @@ struct DashboardView: View {
     @ViewBuilder
     private func rows(_ items: [ScanItem]) -> some View {
         let showsCategory = page.category == nil
+        let display = displayRows(items)
 
-        ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+        ForEach(Array(display.enumerated()), id: \.element.id) { index, row in
             ItemRow(
-                item: item,
-                isSelected: actions.isSelected(item),
-                canSelect: item.canBeChanged,
-                showsCategory: showsCategory,
-                onToggle: { actions.toggle(item) }
+                item: row.item,
+                isSelected: actions.isSelected(row.item),
+                canSelect: row.item.canBeChanged,
+                showsCategory: showsCategory && !row.isChild,
+                isChild: row.isChild,
+                hasChildren: !row.item.children.isEmpty,
+                isExpanded: expanded.contains(row.item.id),
+                onToggleExpanded: { expanded.toggle(row.item.id) },
+                onToggle: { actions.toggle(row.item) }
             )
 
-            if index < items.count - 1 {
+            if index < display.count - 1 {
                 Hairline()
-                    .padding(.leading, showsCategory ? 130 : 108)
+                    .padding(.leading, row.isChild ? 134 : (showsCategory ? 130 : 108))
             }
         }
+    }
+
+    private func displayRows(_ items: [ScanItem]) -> [DisplayRow] {
+        items.flatMap { item -> [DisplayRow] in
+            var rows = [DisplayRow(item: item, isChild: false)]
+
+            if expanded.contains(item.id) {
+                rows.append(contentsOf: item.children.map { DisplayRow(item: $0, isChild: true) })
+            }
+
+            return rows
+        }
+    }
+
+    private func flattened(_ items: [ScanItem]) -> [ScanItem] {
+        items.flatMap { [$0] + $0.children }
     }
 
     private func sortedForReview(_ items: [ScanItem]) -> [ScanItem] {
@@ -262,7 +322,7 @@ struct DashboardView: View {
     @ViewBuilder
     private var actionBar: some View {
         if let report = appState.report {
-            let items = visibleItems(in: report)
+            let items = flattened(visibleItems(in: report))
             let changeable = items.filter(\.canBeChanged)
             let selected = items.filter { actions.isSelected($0) }
 
@@ -544,6 +604,13 @@ struct DashboardView: View {
     }
 }
 
+private struct DisplayRow: Identifiable {
+    let item: ScanItem
+    let isChild: Bool
+
+    var id: UUID { item.id }
+}
+
 private struct Stat {
     let value: String
     let label: String
@@ -588,6 +655,7 @@ private struct Hairline: View {
 private struct SearchField: NSViewRepresentable {
     @Binding var text: String
     let placeholder: String
+    let focusToken: Int
 
     func makeNSView(context: Context) -> NSSearchField {
         let field = NSSearchField()
@@ -596,6 +664,7 @@ private struct SearchField: NSViewRepresentable {
         field.sendsSearchStringImmediately = true
         field.delegate = context.coordinator
         field.setAccessibilityLabel(placeholder)
+        context.coordinator.lastFocusToken = focusToken
         return field
     }
 
@@ -605,6 +674,14 @@ private struct SearchField: NSViewRepresentable {
         if field.stringValue != text {
             field.stringValue = text
         }
+
+        if context.coordinator.lastFocusToken != focusToken {
+            context.coordinator.lastFocusToken = focusToken
+
+            DispatchQueue.main.async {
+                field.window?.makeFirstResponder(field)
+            }
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -613,6 +690,7 @@ private struct SearchField: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSSearchFieldDelegate {
         var text: Binding<String>
+        var lastFocusToken = 0
 
         init(text: Binding<String>) {
             self.text = text

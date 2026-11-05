@@ -138,7 +138,7 @@ final class StartupCollectorTests: XCTestCase {
         )
     }
 
-    func testLaunchItemsSkipDisabledLabels() throws {
+    func testLaunchItemsIncludeDisabledLabelsAsEnableActions() throws {
         let directory = try makeTemporaryDirectory()
         try writeFile(named: "com.example.keep.plist", in: directory)
         try writeFile(named: "com.example.disabled.plist", in: directory)
@@ -148,7 +148,14 @@ final class StartupCollectorTests: XCTestCase {
             disabled: ["com.example.disabled"]
         )
 
-        XCTAssertEqual(items.map(\.title), ["Launch item: com.example.keep"])
+        XCTAssertEqual(items.map(\.title), [
+            "Disabled launch item: com.example.disabled",
+            "Launch item: com.example.keep"
+        ])
+
+        let disabled = items.first { $0.title.hasPrefix("Disabled") }
+        XCTAssertEqual(disabled?.action, .enableLaunchItem(label: "com.example.disabled"))
+        XCTAssertEqual(disabled?.impactLabel, "disabled")
     }
 
     func testParseDisabledLabelsIgnoresMalformedLines() {

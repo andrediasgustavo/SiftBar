@@ -10,6 +10,12 @@ final class ReviewActionModel: ObservableObject {
     @Published private(set) var reports: [ActionReport] = []
     @Published private(set) var pending: [ScanItem] = []
 
+    private let history: HistoryStore
+
+    init(history: HistoryStore = HistoryStore()) {
+        self.history = history
+    }
+
     func isSelected(_ item: ScanItem) -> Bool {
         selected.contains(item.id)
     }
@@ -62,10 +68,23 @@ final class ReviewActionModel: ObservableObject {
         isRunning = true
         isConfirming = false
 
+        let items = pending
+        let startedAt = Date()
+
         var results: [ActionReport] = []
-        for item in pending {
+        for item in items {
             results.append(await ActionExecutor.perform(item))
         }
+
+        let entries = zip(results, items).map { report, item in
+            HistoryEntry(item: item, report: report)
+        }
+        history.append(HistoryRecord(
+            id: UUID(),
+            startedAt: startedAt,
+            finishedAt: Date(),
+            entries: entries
+        ))
 
         reports = results
         isRunning = false
@@ -107,5 +126,53 @@ final class ReviewPageModel: ObservableObject {
     var category: ItemCategory? {
         if case .category(let category) = selection { return category }
         return nil
+    }
+}
+
+/// Tracks which grouped-process rows are expanded.
+final class ExpansionModel: ObservableObject {
+    @Published private(set) var expanded = Set<UUID>()
+
+    func contains(_ id: UUID) -> Bool {
+        expanded.contains(id)
+    }
+
+    func toggle(_ id: UUID) {
+        if expanded.contains(id) {
+            expanded.remove(id)
+        } else {
+            expanded.insert(id)
+        }
+    }
+
+    func clear() {
+        expanded.removeAll()
+    }
+}
+
+/// Triggers focus in the search field when the menu's Find command runs.
+final class SearchFocusModel: ObservableObject {
+    @Published private(set) var token = 0
+
+    func focus() {
+        token += 1
+    }
+}
+
+/// Loads the audit history for the history sheet.
+@MainActor
+final class HistoryPanelModel: ObservableObject {
+    @Published var isPresented = false
+    @Published private(set) var records: [HistoryRecord] = []
+
+    private let store: HistoryStore
+
+    init(store: HistoryStore = HistoryStore()) {
+        self.store = store
+    }
+
+    func show() {
+        records = Array(store.load().reversed())
+        isPresented = true
     }
 }

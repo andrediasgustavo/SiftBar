@@ -6,6 +6,10 @@ struct ItemRow: View {
     let isSelected: Bool
     let canSelect: Bool
     let showsCategory: Bool
+    let isChild: Bool
+    let hasChildren: Bool
+    let isExpanded: Bool
+    let onToggleExpanded: () -> Void
     let onToggle: () -> Void
 
     @StateObject private var hover = HoverModel()
@@ -29,7 +33,7 @@ struct ItemRow: View {
                         }
 
                         Text(item.title)
-                            .font(.body.weight(.medium))
+                            .font(isChild ? .callout.weight(.medium) : .body.weight(.medium))
                             .lineLimit(1)
                     }
 
@@ -52,6 +56,7 @@ struct ItemRow: View {
         }
         .padding(.vertical, 9)
         .padding(.horizontal, 10)
+        .padding(.leading, isChild ? 26 : 0)
         .background(rowBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         .contentShape(Rectangle())
         .onHover { hover.isHovered = $0 }
@@ -68,7 +73,18 @@ struct ItemRow: View {
 
     @ViewBuilder
     private var selectionControl: some View {
-        if canSelect {
+        if hasChildren {
+            Button(action: onToggleExpanded) {
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(isExpanded ? "Hide individual processes" : "Show individual processes")
+            .accessibilityLabel(isExpanded ? "Collapse processes" : "Expand processes")
+        } else if canSelect {
             Button(action: onToggle) {
                 Image(systemName: isSelected ? "checkmark.square.fill" : "square")
                     .font(.system(size: 14))

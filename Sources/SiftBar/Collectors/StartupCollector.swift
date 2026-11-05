@@ -116,17 +116,24 @@ struct StartupCollector: Collector {
             for file in files.sorted() where file.hasSuffix(".plist") {
                 let label = String(file.dropLast(".plist".count))
                 guard !label.hasPrefix("com.apple.") else { continue }
-                guard !disabled.contains(label) else { continue }
                 guard seen.insert(label).inserted else { continue }
+
+                let isDisabled = disabled.contains(label)
 
                 items.append(ScanItem(
                     category: .startup,
-                    title: "Launch item: \(label)",
-                    detail: "Registered in \(directory). Disable it only if the related app or service is no longer needed.",
-                    impactLabel: "launch agent",
+                    title: isDisabled
+                        ? "Disabled launch item: \(label)"
+                        : "Launch item: \(label)",
+                    detail: isDisabled
+                        ? "Disabled with launchctl. Enable it to load it again at login. Registered in \(directory)."
+                        : "Registered in \(directory). Disable it only if the related app or service is no longer needed.",
+                    impactLabel: isDisabled ? "disabled" : "launch agent",
                     impactBytes: nil,
                     risk: risk(forDirectory: directory),
-                    action: .disableLaunchItem(label: label),
+                    action: isDisabled
+                        ? .enableLaunchItem(label: label)
+                        : .disableLaunchItem(label: label),
                     evidence: directory
                 ))
 
