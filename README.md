@@ -87,16 +87,61 @@ reclaimed, how many items succeeded, and whether anything failed.
 
 1. Download the latest **[SiftBar.dmg](https://github.com/andrediasgustavo/SiftBar/releases/latest/download/SiftBar.dmg)**.
 2. Open the DMG and drag **SiftBar** into **Applications**.
-3. SiftBar runs in the menu bar — look for the filter icon. There is no Dock
-   icon.
-4. On first launch, right-click **SiftBar** and choose **Open**, or allow it
-   under **System Settings → Privacy & Security**. The build is ad-hoc signed
-   and not notarized yet.
+3. Eject the DMG. SiftBar runs in the menu bar — look for the filter icon.
+   There is no Dock icon.
 
 **Requirements:** macOS 13 or later on Apple Silicon.
 
-If macOS blocks reading a protected folder, grant SiftBar **Full Disk Access**
-in **System Settings → Privacy & Security**.
+### First launch: the macOS security prompt
+
+SiftBar is **ad-hoc signed and not notarized yet**, so macOS blocks it the
+first time. This is expected, and you only need to approve it once.
+
+**macOS 15 (Sequoia) and later**
+
+1. Open **Applications** and double-click **SiftBar**. macOS shows a warning;
+   click **Done** (not **Move to Trash**).
+2. Open **System Settings → Privacy & Security** and scroll down to
+   **Security**.
+3. Find the message about SiftBar and click **Open Anyway**.
+4. Authenticate with Touch ID or your password, then click **Open** in the
+   final dialog.
+
+**macOS 13 and 14**
+
+1. Open **Applications**, right-click **SiftBar**, and choose **Open**.
+2. Click **Open** in the confirmation dialog.
+
+After this first approval, a normal double-click opens SiftBar. Do **not**
+disable Gatekeeper globally or run `spctl --master-disable`.
+
+<details>
+<summary>Advanced: removing the quarantine attribute</summary>
+
+If the dialogs above are unavailable (for example, on a machine managed by
+MDM), you can remove the quarantine flag from the app you just installed:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/SiftBar.app
+```
+
+Only do this if you downloaded the DMG from this repository and trust it.
+This bypasses Gatekeeper's first-launch check; it is not required for normal
+installations.
+</details>
+
+### Full Disk Access (optional)
+
+SiftBar is read-only, but macOS protects some folders (Mail, Messages, and
+parts of `~/Library`). Without access, those findings are simply missing from
+the scan.
+
+1. Open **System Settings → Privacy & Security → Full Disk Access**.
+2. Click **+**, choose **Applications/SiftBar.app**, and enable it.
+3. Quit SiftBar from the menu bar and open it again.
+
+SiftBar never asks for administrator rights or runs `sudo`.
+
 
 ## Usage
 

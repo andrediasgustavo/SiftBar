@@ -53,3 +53,26 @@ jobs:
               --generate-notes
 
           gh release upload "$GITHUB_REF_NAME" dist/SiftBar.dmg --clobber
+
+      - name: Document the first launch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BODY="$(gh release view "$GITHUB_REF_NAME" --json body -q .body)"
+          if printf '%s' "$BODY" | grep -q "First launch on macOS"; then
+            echo "First-launch note already present."
+            exit 0
+          fi
+          NOTE="$(mktemp)"
+          cat > "$NOTE" <<'EOF'
+          ## First launch on macOS
+
+          SiftBar is ad-hoc signed and not notarized yet, so macOS blocks the first launch. This is expected and only needs to be approved once.
+
+          - **macOS 15+:** double-click SiftBar, click **Done**, then open **System Settings → Privacy & Security → Open Anyway**.
+          - **macOS 13–14:** right-click SiftBar in Applications and choose **Open**.
+          - Optional: grant **Full Disk Access** so protected folders appear in the scan.
+
+          Full instructions: https://github.com/andrediasgustavo/SiftBar#install
+          EOF
+          { cat "$NOTE"; printf '\n---\n\n'; printf '%s\n' "$BODY"; } | gh release edit "$GITHUB_REF_NAME" --notes-file -
