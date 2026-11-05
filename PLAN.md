@@ -1,59 +1,78 @@
-# SiftBar — Plano de Implementação
+# SiftBar — Implementation Plan
 
-> App de barra de menu para macOS que **analisa** o sistema, apresenta uma **lista explicada** de problemas/oportunidades e permite **aplicar apenas o que você escolher** — com preview e classificação de risco.
+> A macOS menu bar app that **analyzes** the system, presents an **explained
+> list** of findings, and **applies only what you choose** — with command
+> previews and risk classification.
 
-- **Nome:** SiftBar (verificado em 04/11/2026: sem app/produto homônimo; `.app` livre; GitHub sem projeto relevante)
-- **Pasta do projeto:** `~/Documents/SiftBar`
-- **Bundle ID provisório:** `com.andredias.siftbar`
-- **Alvo mínimo:** macOS 13.0+ (Apple Silicon; Intel não é prioridade)
-- **Idioma:** código, comentários, README e UI em inglês
-- **Status:** Fases 0, 1 e 2 concluídas — aguardando aprovação da Fase 3
-
----
-
-## 1. Objetivo
-
-Reproduzir com segurança o trabalho manual feito na sessão de limpeza, em um fluxo de 3 passos:
-
-1. **Analisar** — varredura somente leitura (memória, swap, processos, itens de inicialização, serviços, disco, caches, sobras).
-2. **Revisar** — cada item aparece com título, detalhe, impacto (MB/GB ou RAM), **origem do dado** e selo de risco: `Seguro` / `Atenção` / `Perigoso`.
-3. **Aplicar** — você marca o que quer; o app mostra o **comando exato** e só executa após confirmação. Nada é automático por padrão.
-
-### Princípios
-
-- **Read-only por padrão.** O botão "Analisar" nunca altera nada.
-- **Nada de "limpar tudo".** Toda ação é item a item e reversível quando possível.
-- **Transparência total.** Cada linha mostra de onde veio a informação e o que será executado.
-- **Sem placebo.** O foco é causa (agentes, login items, apps pesados), não "esvaziar RAM".
-- **Nunca tocar em área protegida por SIP** (`/System`, `AssetsV2`, etc.).
-
-### Fora de escopo (v1)
-
-- Remover/limpar AssetsV2 e qualquer caminho protegido por SIP.
-- "Otimizar RAM" com `purge` (cosmético).
-- Matar processos automaticamente ou em massa.
-- App Store / sandbox (incompatível com o propósito).
-- Suporte a Intel e macOS < 13.
+- **Name:** SiftBar (checked on 2026-11-04: no conflicting app/product; `.app`
+  name available; no relevant GitHub project)
+- **Project folder:** `~/Documents/SiftBar`
+- **Provisional bundle ID:** `com.andredias.siftbar`
+- **Minimum target:** macOS 13.0+ (Apple Silicon; Intel is not a priority)
+- **Language:** code, comments, documentation, and UI are English
+- **Status:** Phases 0–3 complete; Phase 4 partially complete. See §8.
 
 ---
 
-## 2. Ambiente verificado
+## 1. Goal
 
-| Item | Resultado |
+Reproduce, safely, the manual cleanup work done in the original session, in a
+three-step flow:
+
+1. **Analyze** — read-only scan of memory, swap, processes, startup items,
+   services, disk, caches, and leftovers.
+2. **Review** — every item shows a title, detail, impact (MB/GB or RAM), the
+   **source of the finding**, and a risk label: `Safe` / `Caution` / `Dangerous`.
+3. **Apply** — you select items; the app shows the **exact command** and runs it
+   only after confirmation. Nothing is automatic by default.
+
+### Principles
+
+- **Read-only by default.** The Analyze button never changes anything.
+- **No "clean everything" button.** Every action is item by item and reversible
+  when possible.
+- **Full transparency.** Every row shows where the finding came from and what
+  will run.
+- **No placebo.** Focus on causes (agents, login items, heavy apps), not
+  "freeing RAM".
+- **Never touch SIP-protected areas** (`/System`, `AssetsV2`, etc.).
+- **Critical processes are never actionable.** Protected system processes are
+  classified as dangerous and cannot be terminated from SiftBar.
+
+### Out of scope (v1)
+
+- Removing or cleaning `AssetsV2` and any SIP-protected path.
+- "RAM optimization" with `purge` (cosmetic).
+- Killing processes automatically or in bulk.
+- Mac App Store / sandboxing (incompatible with the product's purpose).
+- Intel support and macOS < 13.
+
+---
+
+## 2. Verified environment
+
+| Item | Result |
 |---|---|
-| macOS | 27.2 (build 26B123) |
-| Xcode completo | ❌ ausente |
+| macOS | 27.2 (build 26B123) locally; CI runs macOS 15 |
+| Full Xcode | ❌ not installed locally |
 | Command Line Tools | ✅ `/Library/Developer/CommandLineTools` |
-| Swift | 6.4.2 (arm64) |
+| Swift | 6.4.2 (arm64) locally |
 | SDK | MacOSX 27.2 |
-| `MenuBarExtra` (SwiftUI) | ✅ compila via `swiftc` (validado) |
-| Ferramentas | `codesign`, `plutil`, `iconutil`, `sqlite3` disponíveis |
+| `MenuBarExtra` (SwiftUI) | ✅ compiles with direct `swiftc` |
+| Tools | `codesign`, `plutil`, `iconutil`, `hdiutil` available |
 
-**Consequência:** build com **`swiftc` direto + script de empacotamento**, sem Xcode. O SwiftPM desta instalação de CLT está quebrado (falha de link do `PackageDescription`), então o script compila as fontes diretamente; o `Package.swift` fica mantido para toolchains saudáveis. Assinatura **ad-hoc** (`codesign -s -`) para uso local. Se um dia for distribuir, entra Developer ID + notarização.
+**Consequence:** local builds use **direct `swiftc` + packaging scripts**, without
+Xcode. The SwiftPM shipped with this CLT installation is broken (the
+`PackageDescription` manifest fails to link), so `scripts/build.sh` compiles the
+sources directly; `Package.swift` is kept for healthy toolchains and CI.
+
+Local signing is **ad-hoc** (`codesign -s -`). Release DMGs are ad-hoc signed
+too, so first launch requires the standard Gatekeeper override. Distribution
+with Developer ID + notarization is planned once a signing identity exists.
 
 ---
 
-## 3. Arquitetura
+## 3. Architecture
 
 ```
 SiftBar/
@@ -61,218 +80,294 @@ SiftBar/
 ├── Package.swift
 ├── Sources/SiftBar/
 │   ├── App/
-│   │   ├── SiftBarApp.swift        # @main + MenuBarExtra + AppDelegate
-│   │   └── AppState.swift           # estado observável (scan, seleção, execução)
+│   │   ├── SiftBarApp.swift          # @main + MenuBarExtra + AppDelegate
+│   │   ├── AppState.swift            # observable scan state
+│   │   └── DashboardWindowController.swift
 │   ├── Core/
-│   │   ├── Models.swift             # ScanItem, Risk, Action, ScanReport
-│   │   ├── Analyzer.swift           # regras e heurísticas de risco
-│   │   ├── Executor.swift           # dry-run, preview e apply
-│   │   ├── CommandRunner.swift      # execução segura (sem shell, com timeout)
-│   │   └── HistoryStore.swift       # log/histórico em JSON
+│   │   ├── Models.swift              # Risk, ItemCategory, ItemAction, ScanItem
+│   │   ├── CommandRunner.swift       # safe execution (no shell, with timeout)
+│   │   ├── ScanCoordinator.swift     # parallel collectors + ordering
+│   │   ├── ProcessSafety.swift       # protected process rules
+│   │   ├── ReviewFilter.swift        # category/risk/search filters
+│   │   ├── SystemProbe.swift         # memory and disk probes
+│   │   └── ActionExecutor.swift      # previews and confirmed actions
 │   ├── Collectors/
 │   │   ├── MemoryCollector.swift
 │   │   ├── ProcessCollector.swift
-│   │   ├── StartupCollector.swift   # login items, launch agents/daemons
+│   │   ├── StartupCollector.swift    # launch agents/daemons
 │   │   ├── BrewCollector.swift
 │   │   ├── DiskCollector.swift
 │   │   ├── CacheCollector.swift
 │   │   └── OrphanCollector.swift
 │   ├── UI/
-│   │   ├── DashboardView.swift      # resumo + botão Analisar
-│   │   ├── ReviewView.swift         # lista com checkboxes e filtros
-│   │   ├── ItemRow.swift
-│   │   ├── RiskBadge.swift
-│   │   ├── PreviewSheet.swift       # comandos exatos antes de aplicar
-│   │   └── HistoryView.swift
+│   │   ├── DashboardView.swift       # sidebar, stats, review list
+│   │   ├── ItemRow.swift             # checkbox, risk, evidence, Finder reveal
+│   │   ├── MenuContentView.swift     # menu bar popover
+│   │   ├── ReviewFilterModel.swift
+│   │   ├── ReviewActionModel.swift   # selection, confirmation, execution
+│   │   └── ActionConfirmationView.swift
 │   └── Support/
-│       ├── Formatters.swift
-│       └── Logger.swift
+│       └── PathSizer.swift
 ├── Resources/
-│   ├── Info.plist                   # LSUIElement = true
-│   └── AppIcon.icns                 # opcional, fase final
+│   └── Info.plist                    # LSUIElement = true
+├── Tests/SiftBarTests/               # 158 XCTest cases
 └── scripts/
-    ├── build.sh                     # swift build + monta .app + assina ad-hoc
-    ├── run.sh                       # build + open
-    └── clean.sh
+    ├── build.sh                      # direct swiftc build + .app assembly + ad-hoc sign
+    ├── run.sh                        # build + open
+    ├── clean.sh
+    └── package.sh                    # APFS DMG with an /Applications symlink
 ```
 
-### Decisões técnicas
+### Technical decisions
 
-| Decisão | Escolha | Motivo |
+| Decision | Choice | Reason |
 |---|---|---|
-| UI | SwiftUI (`MenuBarExtra`, macOS 13+) | Nativo, sem Xcode, leve |
-| Janela | `NSWindow` + `NSHostingView` aberta pelo menu | Evita janela automática no launch; melhor para lista longa que popover |
-| Concorrência | `async/await` + `TaskGroup` | Coletores em paralelo, UI responsiva |
-| Execução de comandos | `/usr/bin/env` + array de argumentos | Evita injeção de shell |
-| Timeout | 10 s por coletor / 30 s por ação | Não travar o app |
-| Persistência | JSON em `~/Library/Application Support/SiftBar/history.json` | Simples, auditável |
-| Log | `~/Library/Logs/SiftBar/` | Padrão macOS |
-| Distribuição | `.app` local assinado ad-hoc | Sem conta de dev |
+| UI | SwiftUI (`MenuBarExtra`, macOS 13+) | Native, no Xcode required, lightweight |
+| Window | `NSWindow` + `NSHostingView` opened from the menu | Avoids a window at launch; better for long lists than a popover |
+| Concurrency | `async/await` + `TaskGroup` | Collectors run in parallel, UI stays responsive |
+| Command execution | `Process` with an executable and an argument array | No shell, no argument injection |
+| Timeout | 10 s per collector / 30 s per action | The app must not hang |
+| Persistence | None yet; JSON history planned for Phase 6 | Simple and auditable |
+| Logging | Not implemented yet | Planned with history |
+| Distribution | Ad-hoc signed DMG via GitHub Releases | No paid developer account yet |
 
 ---
 
-## 4. Modelo de dados
+## 4. Data model
 
 ```swift
 enum Risk: String, Codable { case safe, caution, dangerous }
 
-enum Category: String, Codable {
+enum ItemCategory: String, Codable {
     case memory, processes, startup, services, disk, caches, leftovers
 }
 
-enum Action: Codable {
-    case none                                   // só informativo
+enum ItemAction: Equatable {
+    case none                               // informational only
     case killProcess(pid: Int32, name: String)
-    case removeLoginItem(name: String)
-    case bootout(label: String)                 // launchctl bootout
+    case removeLoginItem(name: String)      // declared, not collected yet
     case disableLaunchItem(label: String)
-    case brewStop(service: String)
+    case stopService(name: String)
     case deletePath(path: String, bytes: Int64)
-    case uninstallApp(path: String)
 }
 
-struct ScanItem: Identifiable, Codable {
+struct ScanItem: Identifiable {
     let id: UUID
-    let category: Category
+    let category: ItemCategory
     let title: String
     let detail: String
-    let impactLabel: String        // "1,7 GB", "39 processos", "4,1 GB swap"
-    let impactBytes: Int64?        // para ordenar
+    let impactLabel: String        // "1.7 GB", "39 processes", "4.1 GB swap"
+    let impactBytes: Int64?        // used for ordering
     let risk: Risk
-    let action: Action
-    let evidence: String           // comando/fonte que gerou o item
+    let action: ItemAction
+    let evidence: String           // command or path that produced the item
 }
 ```
 
+`ScanItem.canBeChanged` is true only for actionable items that are not
+`Dangerous` and do not require administrator rights.
+
 ---
 
-## 5. Coletores (Fase 1)
+## 5. Collectors (Phase 1)
 
-| Coletor | Fonte | Saída |
+| Collector | Source | Output |
 |---|---|---|
-| Memória | `vm_stat`, `sysctl vm.swapusage`, `memory_pressure` | pressão, swap usado, páginas |
-| Processos | `ps -Ao pid,user,rss,%mem,comm`, `top -l 1 -o mem` | top N por RAM, dono, nº de processos por app |
-| Inicialização | `launchctl list`, `~/Library/LaunchAgents`, `/Library/LaunchAgents`, `/Library/LaunchDaemons`, `osascript` (login items) | itens ativos, falhando, órfãos |
-| Serviços | `brew services list` | rodando/parados, estado |
-| Disco | `df -k`, `du -sk` em alvos conhecidos | livre/usado, maiores pastas |
-| Caches | alvos com whitelist (npm, Expo, Xcode, Docker, Homebrew, Gradle, etc.) | tamanho por cache |
-| Sobras | apps instalados vs. `~/Library/Application Support`, `Caches`, `LaunchAgents` | pastas de apps não instalados |
+| Memory | `vm_stat`, `sysctl vm.swapusage`, `memory_pressure` | pressure, swap used, pages |
+| Processes | `ps -Ao pid=,user=,rss=,comm=` | processes above 150 MB, grouped by executable, top 12 |
+| Startup | `launchctl list`, `~/Library/LaunchAgents`, `/Library/LaunchAgents`, `/Library/LaunchDaemons`, `launchctl print-disabled` | failing labels and third-party launch items; disabled labels are skipped |
+| Services | `brew services list` | started, errored, or scheduled services |
+| Disk | `df -k` | free/used space and usage risk |
+| Caches | Fixed whitelist (npm, Expo, Xcode DerivedData, Gradle, Homebrew, CoreSimulator, general caches) | size per cache above 20 MB |
+| Leftovers | Installed apps vs. `~/Library/Application Support` | folders with no matching app above 200 MB, top 10 |
 
-**Regras de robustez:** cada coletor roda isolado; falha de um não derruba o scan; permissões negadas viram item informativo ("sem acesso — conceda Acesso Total ao Disco").
+**Robustness rules:** each collector runs independently; one failure does not
+break the scan; denied permissions become an informational item.
+
+Login items (`osascript` / System Events) are deferred because ad-hoc builds
+trigger a TCC prompt on every launch.
 
 ---
 
-## 6. Análise e risco (Fase 2)
+## 6. Risk analysis (Phase 2)
 
-| Situação | Risco | Ação sugerida |
+| Situation | Risk | Suggested action |
 |---|---|---|
-| Cache recriável (npm, Expo, Gradle) | Seguro | apagar |
-| Login item de app desinstalado | Seguro | remover |
-| Launch agent que falha repetidamente | Seguro | desabilitar |
-| Serviço de dev parado que sobe no boot | Atenção | tirar do boot |
-| App pesado aberto (ex.: Chrome 1,7 GB) | Atenção | encerrar (aviso) |
-| Agente de app removível mas com função (ex.: antivírus) | Atenção | decidir |
-| Processo do sistema / PID crítico | Perigoso | nunca |
-| Caminho protegido por SIP | Perigoso | nunca (bloqueado) |
-| Arquivo em `~/Documents` | Perigoso | não sugerir apagar |
+| Recreatable cache (npm, Expo, Gradle, Homebrew) | Safe | Move to Trash |
+| User launch agent | Safe | Disable |
+| System-wide launch agent/daemon (`/Library`) | Caution | Locked: requires admin |
+| Launch item that keeps failing | Caution | Disable |
+| Homebrew service that starts at login | Safe | Stop |
+| Heavy app process (≥ 1 GB RSS) | Caution | Quit (warning) |
+| Protected process, root process, or system binary | Dangerous | Never |
+| SIP-protected path | Dangerous | Never (blocked) |
+| Application Support folder with no matching app | Caution | Review; read-only for now |
+| Disk ≥ 80% used | Caution | Review |
+| Disk ≥ 90% used | Dangerous | Review |
 
-Cada item recebe também um **score de impacto** para ordenar: bytes liberados > RAM > nº de processos.
-
----
-
-## 7. Execução segura (Fases 3–5)
-
-1. Usuário marca itens → botão **"Revisar selecionados"**.
-2. `PreviewSheet` mostra, por item: comando exato, usuário afetado, reversibilidade.
-3. Confirmação: `Seguro` = 1 clique; `Atenção` = 1 clique + aviso; `Perigoso` = bloqueado.
-4. Execução sequencial com timeout; resultado por item (sucesso/falha + motivo).
-5. Tudo registrado no histórico.
-
-**Guardas obrigatórias:**
-- Whitelist de caminhos; negar qualquer coisa fora dela.
-- Negar `/System`, `/Library/Apple`, `/usr`, `AssetsV2`, `~/.ssh`, `~/Documents`.
-- Nunca matar PID 1, `WindowServer`, `loginwindow`, `launchd`, processos de sistema.
-- Não executar `sudo` na v1; ações de sistema só na Fase 5 via helper.
-- Verificar se o app está aberto antes de apagar seus dados (pedir para fechar).
+Each item also carries an **impact score** for ordering: bytes freed > memory >
+process count.
 
 ---
 
-## 8. Fases e critérios de aceite
+## 7. Safe execution (Phase 3)
 
-Cada fase termina em **gate de aprovação**: eu entrego, você testa, aprovamos e só então sigo.
+1. The user selects changeable items (checkbox) and clicks the action button.
+2. The confirmation sheet lists every selected item with its **exact command**
+   and risk.
+3. Confirmation: `Safe` and `Caution` require the explicit action button;
+   `Dangerous`, admin-only, and read-only items have no checkbox.
+4. Actions run sequentially with a timeout; each result is reported.
+5. The app rescans and shows a result card with reclaimed bytes and failures.
 
-### Fase 0 — Esqueleto (≈ 30–60 min) ✅
-- [x] `Package.swift`, estrutura de pastas, `Info.plist`
-- [x] App de barra de menu abre, mostra "Analisar" e uma janela vazia
-- [x] `scripts/build.sh` gera `SiftBar.app` assinado ad-hoc
-- **Aceite:** ícone na barra, app abre e fecha sem erro. ✅
+**Implemented actions:**
 
-### Fase 1 — Coleta read-only (≈ 1–2 h) ✅
-- [x] Os 7 coletores + `ScanReport` (memória, processos, inicialização, brew, disco, caches, sobras)
-- [x] Tela com tabela/contadores; botão Analisar funcional
-- [x] Nenhuma ação disponível ainda
-- **Aceite:** números conferem com `top`/`df`; scan completo em ~0,9 s. ✅
-- **Nota:** login items via `osascript` foram adiados para a Fase 3 (evita prompt de TCC a cada build ad-hoc).
-
-### Fase 2 — Classificação e revisão (≈ 1–2 h) ✅
-- [x] Motor de regras + badges de risco + ordenação por impacto
-- [x] Filtros por categoria/risco; busca (título, detalhe, evidência e categoria)
-- [x] Itens "Perigoso" apenas informativos
-- [x] Processos do sistema protegidos (PID 1, `WindowServer`, `launchd`, root e binários de sistema) viram `Dangerous` e nunca recebem ação de encerrar
-- [x] Processos com o mesmo executável são agrupados (ex.: helpers do Chrome) para reduzir ruído
-- [x] Launch items em `/Library` viram `Caution` (exigem admin); itens do usuário permanecem `Safe`
-- **Aceite:** lista compreensível sem ler o código; riscos coerentes com a tabela da seção 6. ✅
-
-### Fase 3 — Ações seguras (≈ 1–2 h)
-- [ ] Remover login item, `launchctl bootout`, `brew services stop`
-- [ ] Preview + confirmação + resultado por item
-- **Aceite:** testar em itens reais reversíveis; histórico registra tudo.
-
-### Fase 4 — Caches e disco (≈ 1–2 h)
-- [ ] Cálculo de tamanho com `du`, whitelist, dry-run
-- [ ] Exclusão com confirmação e relatório de bytes liberados
-- **Aceite:** apagar caches de teste; nenhum caminho fora da whitelist é tocado.
-
-### Fase 5 — Privilégios de admin (≈ 2–4 h, opcional)
-- [ ] Helper privilegiado (`SMAppService`) para ações de sistema
-- [ ] Diálogo de autorização; comandos auditados
-- **Aceite:** ação de sistema funciona com senha e falha limpa se negada.
-
-### Fase 6 — Polimento (opcional)
-- [ ] Histórico visual, agendamento (launchd), notificações
-- [ ] Ícone próprio, atalho global, modo "só monitorar"
-- [ ] Exportar relatório em Markdown
-
----
-
-## 9. Testes
-
-- **Unitários:** parsing de `vm_stat`, `ps`, `launchctl`, `brew services`; regras de risco; whitelist.
-- **Integração:** cada coletor contra dados reais; `CommandRunner` com timeout e argumentos inválidos.
-- **Segurança:** tentar path traversal, caminho fora da whitelist, PID protegido, injeção de argumento.
-- **Manual:** comparar números com Atividade do Monitor, `top`, `df` e `launchctl list`.
-
----
-
-## 10. Riscos e mitigação
-
-| Risco | Mitigação |
+| Action | Command / behavior |
 |---|---|
-| Sem Xcode, algo não compilar | Validado SwiftUI/MenuBarExtra; build via `swiftc` direto |
-| TCC bloqueia leitura de `~/Library` | Detectar e exibir aviso; botão para abrir Ajustes |
-| Matar processo com trabalho não salvo | Selo "Atenção", nome do app, confirmação explícita |
-| Apagar cache em uso | Checar processo aberto e bloquear |
-| Números divergirem do Finder | Explicar categoria vs. pasta (lição dos "15 GB em Documentos") |
-| App ficar pesado | Coletores com timeout e execução paralela; UI sob demanda |
-| Distribuição | v1 é local; notarização só se necessário |
+| Quit process | `/bin/kill -TERM <pid>` (single-PID groups only) |
+| Disable launch item | `launchctl bootout gui/<uid>/<label>` then `launchctl disable gui/<uid>/<label>` |
+| Stop Homebrew service | `brew services stop <name>` |
+| Remove cache | Move the folder to the Trash (reversible) |
+
+**Required guardrails:**
+
+- Never kill PID 1, `WindowServer`, `loginwindow`, `launchd`, root processes,
+  or processes running from system paths.
+- Never offer actions on `Dangerous` items.
+- Lock `/Library` launch items because they require admin rights.
+- Do not run `sudo` in v1; system-level actions are deferred to Phase 5.
+- No shell interpolation: every command uses an executable plus an argument
+  array.
+- Confirm before every batch; no automatic cleanup.
+- History/audit logging is not implemented yet (Phase 6).
 
 ---
 
-## 11. Próximo passo
+## 8. Phases and acceptance criteria
 
-Aprovar a **Fase 0**. Ao aprovar, eu:
-1. crio `Package.swift`, fontes mínimas e `Info.plist`;
-2. crio `scripts/build.sh` e `scripts/run.sh`;
-3. compilo, assino ad-hoc e abro o app para você ver o ícone na barra.
+Each phase ends at an **approval gate**: the work is delivered, you test it, and
+only then do we move on.
 
-> Nome "SiftBar" é provisório. Se quiser outro (ex.: MacTune, Sentinel, TuneBar), digo onde trocar — é só o nome da pasta, do target e do bundle ID.
+### Phase 0 — Skeleton (≈ 30–60 min) ✅
+- [x] `Package.swift`, folder structure, `Info.plist`
+- [x] Menu bar app opens, shows Analyze, and opens an empty window
+- [x] `scripts/build.sh` produces an ad-hoc signed `SiftBar.app`
+- **Acceptance:** menu bar icon, app opens and closes without errors. ✅
+
+### Phase 1 — Read-only collection (≈ 1–2 h) ✅
+- [x] All seven collectors + `ScanReport`
+- [x] Dashboard with counters; working Analyze button
+- [x] No actions available yet
+- **Acceptance:** numbers match `top`/`df`; a full scan finishes in under a
+  second. ✅
+
+### Phase 2 — Classification and review (≈ 1–2 h) ✅
+- [x] Risk rules, risk badges, ordering by impact
+- [x] Filters by category/risk; search across title, detail, evidence, category
+- [x] `Dangerous` items are informational only
+- [x] Protected system processes (`PID 1`, `WindowServer`, `launchd`, root,
+  system binaries) become `Dangerous` and never receive a kill action
+- [x] Processes sharing an executable are grouped
+- [x] `/Library` launch items become `Caution` (admin required); user items stay
+  `Safe`
+- **Acceptance:** the list is understandable without reading the code; risks
+  match §6. ✅
+
+### Phase 3 — Safe actions (≈ 1–2 h) ✅
+- [x] Quit single-PID processes with `kill -TERM`
+- [x] Disable user launch agents with `launchctl bootout` + `disable`
+- [x] Stop Homebrew services with `brew services stop`
+- [x] Move cache folders to the Trash
+- [x] Command preview, confirmation sheet, per-item results, rescan, and result
+  card
+- [ ] Remove login items via System Events (deferred: TCC prompt on every
+  ad-hoc build)
+- **Acceptance:** tested on real reversible items; no protected process or
+  admin-only item can be actioned. ✅
+
+### Phase 4 — Cache and disk cleanup (≈ 1–2 h) ⏳
+- [x] Cache size calculation and fixed whitelist
+- [x] Trash-based removal with confirmation and reclaimed-bytes report
+- [ ] Disk cleanup: largest files/folders and "biggest consumers" view
+- [ ] Enforce the path whitelist inside `ActionExecutor` (today the collectors
+  only produce whitelisted paths)
+- [ ] Warn when an app is running before removing its data
+- **Acceptance:** test caches are removed; no path outside the whitelist is
+  touched.
+
+### Phase 5 — Administrator privileges (≈ 2–4 h, optional) ⏸
+- [ ] Privileged helper (`SMAppService`) for system-level actions
+- [ ] Authorization dialog; audited commands
+- **Blocked:** `SMAppService` requires a Developer ID/team and a notarized
+  helper. Current behavior correctly locks `/Library` items instead.
+- **Acceptance:** a system action works with authorization and fails cleanly
+  when denied.
+
+### Phase 6 — History and polish (optional) ⏳
+- [ ] History/audit log (JSON in Application Support) — highest priority here
+- [ ] Menu bar commands and shortcuts (`⌘R` Analyze, `⌘F` Find, `⌘C` Copy
+  evidence)
+- [ ] Keyboard selection/navigation in the review list
+- [ ] Notifications for scan completion (only when appropriate)
+- [ ] Scheduling with `launchd`
+- [ ] Custom app icon; "monitor only" mode
+- [ ] Markdown report export
+
+### Phase 7 — Distribution ✅
+- [x] APFS DMG with an `/Applications` symlink (`scripts/package.sh`)
+- [x] GitHub Release published automatically from `v*` tags
+- [x] README download link to the latest DMG
+- [ ] Notarization (blocked on a Developer ID)
+
+---
+
+## 9. Testing
+
+- **Unit tests:** parsers for `vm_stat`, `ps`, `launchctl`, `brew services`;
+  risk rules; review filters; process safety; action previews and selection;
+  disabled launch labels.
+- **Integration tests:** each collector against real data; `CommandRunner` with
+  timeouts and invalid arguments; a full scan.
+- **Safety tests:** protected PIDs, admin-only items, read-only items, and
+  path/command construction.
+- **Manual tests:** compare numbers with Activity Monitor, `top`, `df`, and
+  `launchctl list`; verify Finder reveal and confirmation flows.
+- **Current suite:** 158 XCTest cases. CI runs `swift build`,
+  `swift build -c release`, `swift test --parallel`, and validates the app and
+  DMG.
+- **Gaps:** no automated UI tests; destructive actions are not executed in
+  tests; privileged actions are deferred.
+
+---
+
+## 10. Risks and mitigation
+
+| Risk | Mitigation |
+|---|---|
+| Local CLT cannot link the SwiftPM manifest | Scripts build with `swiftc`; CI covers `swift build`/`swift test` |
+| TCC blocks reading `~/Library` | Detect and show a warning; link to Settings |
+| Killing a process with unsaved work | `Caution` risk, app name, explicit confirmation |
+| Deleting a cache in use | Planned: detect open processes and block |
+| Numbers differ from Finder | Explain category vs. folder (the "15 GB in Documents" lesson) |
+| Ad-hoc signing triggers Gatekeeper | Document right-click → Open; notarize when a Developer ID exists |
+| Privileged helper is not shippable without signing | Defer Phase 5 until Developer ID + notarization |
+| Grouped process rows cannot be quit | Planned: per-PID expansion |
+| No history yet | Planned for Phase 6; results are shown but not persisted |
+| App becomes heavy | Timeouts, parallel collectors, on-demand UI |
+
+---
+
+## 11. Next step
+
+Recommended order:
+
+1. Finish **Phase 4**: disk cleanup (largest files/folders) and enforce the
+   path whitelist in the executor.
+2. Add **history/audit** (Phase 6) so every action is traceable.
+3. Add menu bar commands and keyboard shortcuts (`⌘R`, `⌘F`, `⌘C`).
+4. Then notifications, scheduling, and a custom icon.
+5. Leave the privileged helper (Phase 5) until a Developer ID and notarization
+   are available.
+
+> "SiftBar" is still a provisional name. If it changes, the folder, target,
+> bundle ID, and release names change with it.

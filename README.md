@@ -6,8 +6,8 @@
 A macOS menu bar app that **analyzes your system, explains what it finds, and
 lets you choose what to clean up** — nothing runs without confirmation.
 
-> **Status:** Phase 3 — confirmed cleanup actions, Finder reveal, and DMG
-> releases.
+> **Status:** Phases 0–3 complete. Phase 4 (cache and disk cleanup) in progress.
+> See [PLAN.md](PLAN.md) for the roadmap and acceptance criteria.
 
 ## Download
 
