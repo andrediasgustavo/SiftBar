@@ -31,7 +31,7 @@ final class PathSizerTests: XCTestCase {
         let sizes = PathSizer.parseChildSizes(output, root: "/tmp/root")
 
         XCTAssertEqual(sizes.map(\.path), ["/tmp/root/a", "/tmp/root/b c"])
-        XCTAssertEqual(sizes.map(\.bytes), [50 * 1024, 25 * 1024])
+        XCTAssertEqual(sizes.map(\.bytes), [Int64(50 * 1024), Int64(25 * 1024)])
     }
 
     func testChildSizeParserIgnoresMalformedLinesAndDuplicates() {

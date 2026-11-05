@@ -29,7 +29,7 @@ final class LargeConsumersCollectorTests: XCTestCase {
             "Large folder: Huge",
             "Large folder: Medium"
         ])
-        XCTAssertEqual(items.map(\.impactBytes), [8_000_000_000, 4_000_000_000])
+        XCTAssertEqual(items.map(\.impactBytes), [Int64(8_000_000_000), Int64(4_000_000_000)])
     }
 
     func testItemsBelowTheMinimumAreDropped() {
