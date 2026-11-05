@@ -7,7 +7,6 @@ A macOS menu bar app that **analyzes your system, explains what it finds, and
 lets you choose what to clean up** — nothing runs without confirmation.
 
 > **Status:** Phase 1 — read-only collectors and review list. Actions land in Phase 3.
-> pipeline. The full collector set lands in Phase 1.
 
 ## Why
 
@@ -80,6 +79,7 @@ To open the dashboard at launch during development:
 
 ```bash
 open dist/SiftBar.app --args --show-dashboard
+open dist/SiftBar.app --args --show-dashboard --analyze
 ```
 
 ## Configuration

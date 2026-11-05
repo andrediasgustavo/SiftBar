@@ -113,6 +113,11 @@ enum SystemProbe {
         return .normal
     }
 
+    /// Parses the available space (bytes) from `df -k` output.
+    static func parseFreeDisk(from output: String) throws -> Int64 {
+        try parseDisk(output).freeBytes
+    }
+
     private static func parseDisk(_ output: String) throws -> DiskStats {
         let lines = output.split(separator: "\n")
         guard lines.count >= 2 else { throw ProbeError.unexpectedOutput("df") }

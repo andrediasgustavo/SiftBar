@@ -126,6 +126,10 @@ struct SystemSnapshot: Sendable {
     let memory: MemoryStats
     let disk: DiskStats
 
+    /// Convenience accessors kept for tests and callers that only need totals.
+    var totalMemoryBytes: UInt64 { memory.totalBytes }
+    var freeDiskBytes: Int64 { disk.freeBytes }
+
     static let empty = SystemSnapshot(
         memory: MemoryStats(totalBytes: 0, usedBytes: 0, swapUsedBytes: 0, pressure: .normal),
         disk: DiskStats(totalBytes: 0, usedBytes: 0, freeBytes: 0)
