@@ -70,10 +70,26 @@ jobs:
           codesign --verify --deep --strict --verbose=2 dist/SiftBar.app
           file dist/SiftBar.app/Contents/MacOS/SiftBar
 
+      - name: Package DMG
+        run: ./scripts/package.sh
+
+      - name: Verify DMG
+        run: hdiutil verify dist/SiftBar.dmg
+
+      - name: Verify app inside DMG
+        run: |
+          MOUNT="$(mktemp -d)"
+          trap 'hdiutil detach "$MOUNT" >/dev/null 2>&1 || true' EXIT
+          hdiutil attach dist/SiftBar.dmg -nobrowse -readonly -mountpoint "$MOUNT" >/dev/null
+          test -L "$MOUNT/Applications"
+          codesign --verify --deep --strict --verbose=2 "$MOUNT/SiftBar.app"
+
       - name: Upload app artifact
         uses: actions/upload-artifact@v4
         with:
           name: SiftBar-${{ github.sha }}
-          path: dist/SiftBar.app
+          path: |
+            dist/SiftBar.app
+            dist/SiftBar.dmg
           if-no-files-found: error
           retention-days: 7

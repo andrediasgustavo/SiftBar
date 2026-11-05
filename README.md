@@ -6,8 +6,17 @@
 A macOS menu bar app that **analyzes your system, explains what it finds, and
 lets you choose what to clean up** — nothing runs without confirmation.
 
-> **Status:** Phase 2 — risk classification, process grouping, filters, and
-> search. Actions land in Phase 3.
+> **Status:** Phase 3 — confirmed cleanup actions, Finder reveal, and DMG
+> releases.
+
+## Download
+
+[**Download SiftBar.dmg**](https://github.com/andrediasgustavo/SiftBar/releases/latest/download/SiftBar.dmg)
+— latest release.
+
+Requirements: macOS 13+ on Apple Silicon. The build is ad-hoc signed and not
+notarized. On first launch, right-click SiftBar and choose **Open**, or allow it
+under **System Settings → Privacy & Security**.
 
 ## Why
 
