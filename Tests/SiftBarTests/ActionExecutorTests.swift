@@ -149,6 +149,34 @@ final class ActionExecutorTests: XCTestCase {
         XCTAssertTrue(report.message.contains("whitelist"))
     }
 
+    /// End-to-end happy path: creates a real folder inside a whitelisted cache
+    /// root, runs the executor, and verifies the folder really moved to Trash.
+    func testDeletePathInsideTheWhitelistMovesItToTrash() async throws {
+        let name = "SiftBarTests-\(UUID().uuidString)"
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let directory = home
+            .appendingPathComponent("Library/Caches", isDirectory: true)
+            .appendingPathComponent(name, isDirectory: true)
+        let trashed = home
+            .appendingPathComponent(".Trash", isDirectory: true)
+            .appendingPathComponent(name, isDirectory: true)
+
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("cache payload".utf8).write(to: directory.appendingPathComponent("payload.bin"))
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: directory)
+            try? FileManager.default.removeItem(at: trashed)
+        }
+
+        let report = await ActionExecutor.perform(
+            item(action: .deletePath(path: directory.path, bytes: 12), impactBytes: 12)
+        )
+
+        XCTAssertTrue(report.success, report.message)
+        XCTAssertEqual(report.reclaimedBytes, 12)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
+    }
+
     func testRevealURLUsesTheDeletePath() {
         let item = item(action: .deletePath(path: "/tmp/example-cache", bytes: 10))
 

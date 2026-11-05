@@ -91,6 +91,30 @@ final class LargeConsumersCollectorTests: XCTestCase {
         )
     }
 
+    /// End-to-end over a real directory: `du` runs, sizes are parsed, files and
+    /// folders are distinguished, and the threshold is applied.
+    func testCollectSizesRealChildrenWithDU() async throws {
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SiftBarTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        let large = base.appendingPathComponent("large.bin")
+        let small = base.appendingPathComponent("small.bin")
+        try Data(repeating: 0xAB, count: 2_000_000).write(to: large)
+        try Data(repeating: 0xCD, count: 1_000).write(to: small)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: base)
+        }
+
+        let items = await LargeConsumersCollector().collect(
+            roots: [base.path],
+            home: base.path,
+            minimumBytes: 1_000_000
+        )
+
+        XCTAssertEqual(items.map(\.title), ["Large file: large.bin"])
+        XCTAssertEqual(items.first?.revealURL?.standardizedFileURL.path, large.standardizedFileURL.path)
+    }
+
     // MARK: - Helpers
 
     private func entry(

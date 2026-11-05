@@ -19,9 +19,27 @@ enum PathSizer {
     }
 
     /// Sizes of the immediate children of a directory (files and folders).
-    /// A single `du -d 1` call is much cheaper than one `du` per child.
-    static func childSizes(of path: String, timeout: TimeInterval = 15) async -> [ChildSize] {
+    ///
+    /// macOS `du -d 1` only prints directories, so directories come from `du`
+    /// and direct files come from a shallow `find` (limited by the size
+    /// threshold). This avoids `du -a`, which prints the whole tree and can
+    /// time out on large folders.
+    static func childSizes(
+        of path: String,
+        minimumFileBytes: Int64 = 0,
+        timeout: TimeInterval = 15
+    ) async -> [ChildSize] {
         guard FileManager.default.fileExists(atPath: path) else { return [] }
+
+        async let directories = directorySizes(of: path, timeout: timeout)
+        async let files = fileSizes(in: path, minimumBytes: minimumFileBytes, timeout: timeout)
+
+        let all = await directories + files
+        var seen = Set<String>()
+        return all.filter { seen.insert($0.path).inserted }
+    }
+
+    private static func directorySizes(of path: String, timeout: TimeInterval) async -> [ChildSize] {
         guard let result = try? await CommandRunner.run(
             "/usr/bin/du",
             arguments: ["-d", "1", "-k", path],
@@ -31,7 +49,27 @@ enum PathSizer {
         return parseChildSizes(result.stdout, root: path)
     }
 
-    /// Parses `du -k -d 1 <root>` output, skipping the root line itself.
+    private static func fileSizes(
+        in path: String,
+        minimumBytes: Int64,
+        timeout: TimeInterval
+    ) async -> [ChildSize] {
+        guard let result = try? await CommandRunner.run(
+            "/usr/bin/find",
+            arguments: [
+                path,
+                "-maxdepth", "1",
+                "-type", "f",
+                "-size", "+\(max(minimumBytes, 1))c",
+                "-exec", "/usr/bin/du", "-sk", "{}", "+"
+            ],
+            timeout: timeout
+        ) else { return [] }
+
+        return parseChildSizes(result.stdout, root: path)
+    }
+
+    /// Parses `du` output, keeping only immediate children of the root.
     static func parseChildSizes(_ output: String, root: String) -> [ChildSize] {
         let rootPath = URL(fileURLWithPath: root).standardizedFileURL.path
         var seen = Set<String>()
@@ -47,6 +85,9 @@ enum PathSizer {
                 .standardizedFileURL
                 .path
 
+            guard URL(fileURLWithPath: childPath).deletingLastPathComponent().path == rootPath else {
+                continue
+            }
             guard childPath != rootPath, seen.insert(childPath).inserted else { continue }
             sizes.append(ChildSize(path: childPath, bytes: kilobytes * 1024))
         }

@@ -170,7 +170,7 @@ Use the table below to find where each value lives.
 |---|---|---|
 | Bundle identifier | `com.andredias.siftbar` | `Resources/Info.plist` → `CFBundleIdentifier` |
 | Display name | `SiftBar` | `Resources/Info.plist` → `CFBundleDisplayName` / `CFBundleName` |
-| Version | `0.1.0` (build `1`) | `Resources/Info.plist` → `CFBundleShortVersionString` / `CFBundleVersion` |
+| Version | `0.2.0` (build `2`) | `Resources/Info.plist` → `CFBundleShortVersionString` / `CFBundleVersion` |
 | Minimum macOS | `13.0` | `Resources/Info.plist` → `LSMinimumSystemVersion`, `Package.swift` → `.macOS(.v13)`, `scripts/build.sh` → `-target` |
 | Menu bar only | enabled | `Resources/Info.plist` → `LSUIElement` |
 | Build configuration | `release` | First argument to `scripts/build.sh` / `scripts/run.sh` (`release` or `debug`) |
@@ -193,7 +193,7 @@ Unit tests live in `Tests/SiftBarTests/` and use XCTest. Run them with:
 swift test
 ```
 
-The suite has 194 tests covering command execution, every parser (`vm_stat`,
+The suite has 198 tests covering command execution, every parser (`vm_stat`,
 swap, `df`, `ps`, `launchctl`, `brew services`, `du`), risk thresholds,
 protected-process rules, duplicate detection, grouping, per-PID children,
 filtering, search, sorting, action previews, selection rules, disabled/enabled

@@ -22,12 +22,25 @@ struct LargeConsumersCollector: Collector {
         let roots = Self.roots(home: home)
             .filter { FileManager.default.fileExists(atPath: $0) }
 
+        return await collect(roots: roots, home: home)
+    }
+
+    /// Entry point with explicit roots, also used by tests. Each root is sized
+    /// with one real `du -d 1` call.
+    func collect(
+        roots: [String],
+        home: String,
+        minimumBytes: Int64 = LargeConsumersCollector.minimumBytes
+    ) async -> [ScanItem] {
         var entries: [Entry] = []
 
         await withTaskGroup(of: [Entry].self) { group in
             for root in roots {
                 group.addTask {
-                    let sizes = await PathSizer.childSizes(of: root)
+                    let sizes = await PathSizer.childSizes(
+                        of: root,
+                        minimumFileBytes: minimumBytes
+                    )
 
                     return sizes.map { size in
                         var isDirectory: ObjCBool = false
@@ -51,7 +64,7 @@ struct LargeConsumersCollector: Collector {
             }
         }
 
-        return Self.items(from: entries, home: home)
+        return Self.items(from: entries, minimumBytes: minimumBytes, home: home)
     }
 
     /// Only the folders people actually browse for space. Library, system
@@ -60,7 +73,12 @@ struct LargeConsumersCollector: Collector {
         directoryNames.map { "\(home)/\($0)" }
     }
 
-    static func items(from entries: [Entry], limit: Int = limit, home: String = "") -> [ScanItem] {
+    static func items(
+        from entries: [Entry],
+        minimumBytes: Int64 = minimumBytes,
+        limit: Int = limit,
+        home: String = ""
+    ) -> [ScanItem] {
         entries
             .filter { $0.bytes >= minimumBytes }
             .sorted { $0.bytes > $1.bytes }

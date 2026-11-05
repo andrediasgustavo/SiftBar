@@ -114,7 +114,7 @@ SiftBar/
 │       └── PathSizer.swift
 ├── Resources/
 │   └── Info.plist                    # LSUIElement = true
-├── Tests/SiftBarTests/               # 194 XCTest cases
+├── Tests/SiftBarTests/               # 198 XCTest cases
 └── scripts/
     ├── build.sh                      # direct swiftc build + .app assembly + ad-hoc sign
     ├── run.sh                        # build + open
@@ -185,7 +185,7 @@ struct ScanItem: Identifiable {
 | Services | `brew services list` | started, errored, or scheduled services |
 | Disk | `df -k` | free/used space and usage risk |
 | Caches | Fixed whitelist (npm, Expo, Xcode DerivedData, Gradle, Homebrew, CoreSimulator, general caches) | size per cache above 20 MB; warns when a related app is running |
-| Big consumers | `du -k -d 1` on Downloads, Desktop, Documents, Movies, Pictures, Music | files and folders above 1 GB, read-only |
+| Big consumers | `du -a -k` on Downloads, Desktop, Documents, Movies, Pictures, Music | files and folders above 1 GB, read-only |
 | Leftovers | Installed apps vs. `~/Library/Application Support` | folders with no matching app above 200 MB, top 10 |
 
 **Robustness rules:** each collector runs independently; one failure does not
@@ -306,7 +306,7 @@ only then do we move on.
 ### Phase 4 — Cache and disk cleanup (≈ 1–2 h) ✅
 - [x] Cache size calculation and fixed whitelist
 - [x] Trash-based removal with confirmation and reclaimed-bytes report
-- [x] Disk cleanup: largest files/folders (`du -d 1`) and biggest-consumers rows
+- [x] Disk cleanup: largest files/folders (`du -a -k`) and biggest-consumers rows
 - [x] Enforce the path whitelist inside `ActionExecutor` (traversal and symlink
   escapes included)
 - [x] Warn when an app is running before removing its data
@@ -354,7 +354,7 @@ only then do we move on.
   command construction, traversal and symlink escapes.
 - **Manual tests:** compare numbers with Activity Monitor, `top`, `df`, and
   `launchctl list`; verify Finder reveal and confirmation flows.
-- **Current suite:** 194 XCTest cases. CI runs `swift build`,
+- **Current suite:** 198 XCTest cases. CI runs `swift build`,
   `swift build -c release`, `swift test --parallel`, and validates the app and
   DMG.
 - **Gaps:** no automated UI tests; destructive actions are not executed in
