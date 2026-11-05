@@ -36,3 +36,6 @@ coverage/
 .env
 .env.*
 !.env.example
+
+# Local agent tooling
+.opencode/
