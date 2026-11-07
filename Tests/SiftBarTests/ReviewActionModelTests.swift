@@ -85,6 +85,18 @@ final class ReviewActionModelTests: XCTestCase {
         XCTAssertTrue(model.pending.isEmpty)
     }
 
+    @MainActor
+    func testSucceededIDsMatchesDemoReports() async {
+        let model = ReviewActionModel()
+
+        XCTAssertTrue(model.succeededIDs.isEmpty)
+
+        model.loadDemoReports()
+
+        XCTAssertEqual(model.succeededIDs.count, 2)
+        XCTAssertEqual(model.succeededIDs.count, model.reports.filter(\.success).count)
+    }
+
     // MARK: - Helpers
 
     private func item(

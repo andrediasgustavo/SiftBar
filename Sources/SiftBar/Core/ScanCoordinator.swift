@@ -1,7 +1,10 @@
 import Foundation
 
 enum ScanCoordinator {
-    static func run(includeProtectedFolders: Bool = true) async -> ScanReport {
+    static func run(
+        includeProtectedFolders: Bool = true,
+        includeSlowCollectors: Bool = true
+    ) async -> ScanReport {
         let snapshot = await SystemProbe.snapshotOrEmpty()
 
         // Fast system state first: process and startup scans should not compete
@@ -12,21 +15,25 @@ enum ScanCoordinator {
             StartupCollector(),
             BrewCollector(),
             DiskCollector(disk: snapshot.disk),
-            LargeConsumersCollector(includeProtectedFolders: includeProtectedFolders),
             CacheCollector(),
             OrphanCollector()
         ]
 
         var items = await collect(fastCollectors)
 
-        // The space map walks ~/Library and /Library. Run it after the fast
-        // collectors so a busy disk cannot make the process list time out.
-        items.append(contentsOf: await collect([
-            DiskUsageCollector(
-                disk: snapshot.disk,
-                includeProtectedFolders: includeProtectedFolders
-            )
-        ]))
+        // The space map and large-consumer walks hit big folders with `du`.
+        // They run after the fast collectors so a busy disk cannot make the
+        // process list time out, and they can be skipped entirely for the
+        // quick refresh used after action batches.
+        if includeSlowCollectors {
+            items.append(contentsOf: await collect([
+                LargeConsumersCollector(includeProtectedFolders: includeProtectedFolders),
+                DiskUsageCollector(
+                    disk: snapshot.disk,
+                    includeProtectedFolders: includeProtectedFolders
+                )
+            ]))
+        }
 
         return ScanReport(
             generatedAt: Date(),

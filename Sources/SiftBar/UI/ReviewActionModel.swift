@@ -116,6 +116,13 @@ final class ReviewActionModel: ObservableObject {
         !reports.isEmpty && reports.allSatisfy(\.success)
     }
 
+    /// IDs that no longer exist on disk (moved to Trash, quit, disabled).
+    /// `ActionReport.id` is the source `ScanItem.id`, so the dashboard can
+    /// prune every category view that shows the same item.
+    var succeededIDs: Set<UUID> {
+        Set(reports.filter(\.success).map(\.id))
+    }
+
     func dismissSummary() {
         reports = []
     }

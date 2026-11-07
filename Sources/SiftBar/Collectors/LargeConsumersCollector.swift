@@ -104,7 +104,8 @@ struct LargeConsumersCollector: Collector {
             impactBytes: entry.bytes,
             risk: .caution,
             action: .none,
-            evidence: entry.path
+            evidence: entry.path,
+            isSlowRefresh: true
         )
     }
 

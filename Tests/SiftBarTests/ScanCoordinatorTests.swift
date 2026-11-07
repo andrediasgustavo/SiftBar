@@ -93,5 +93,15 @@ final class ScanCoordinatorTests: XCTestCase {
         XCTAssertGreaterThan(report.memory.totalBytes, 0)
         XCTAssertGreaterThan(report.disk.totalBytes, 0)
         XCTAssertTrue(report.items.allSatisfy { !$0.title.isEmpty })
+        XCTAssertTrue(report.items.contains { $0.isSlowRefresh })
+        XCTAssertTrue(report.items.contains { $0.isBreakdown })
+    }
+
+    func testRunWithoutSlowCollectorsSkipsTheSpaceMap() async {
+        let report = await ScanCoordinator.run(includeSlowCollectors: false)
+
+        XCTAssertFalse(report.items.isEmpty)
+        XCTAssertFalse(report.items.contains { $0.isSlowRefresh })
+        XCTAssertFalse(report.items.contains { $0.isBreakdown })
     }
 }

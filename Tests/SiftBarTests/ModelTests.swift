@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 @testable import SiftBar
 
@@ -259,5 +260,207 @@ final class ModelTests: XCTestCase {
 
         XCTAssertEqual(disk.importantFreeBytes, 40)
         XCTAssertFalse(disk.hasContainerBreakdown)
+    }
+
+    func testRemovingItemsFiltersByIDAcrossCategories() {
+        let cache = ScanItem(
+            category: .caches,
+            title: "Spotify cache",
+            detail: "",
+            impactLabel: "",
+            impactBytes: 10,
+            risk: .caution,
+            action: .deletePath(path: "/tmp/spotify", bytes: 10),
+            evidence: ""
+        )
+        let leftover = ScanItem(
+            category: .leftovers,
+            title: "Leftover",
+            detail: "",
+            impactLabel: "",
+            impactBytes: 20,
+            risk: .caution,
+            action: .trashLeftover(path: "/tmp/leftover", bytes: 20),
+            evidence: ""
+        )
+        let report = ScanReport(
+            generatedAt: Date(),
+            items: [cache, leftover],
+            memory: MemoryStats(totalBytes: 8, usedBytes: 4, swapUsedBytes: 0, pressure: .normal),
+            disk: DiskStats(totalBytes: 100, usedBytes: 60, freeBytes: 40)
+        )
+
+        let pruned = report.removingItems(withIDs: [cache.id])
+
+        XCTAssertEqual(pruned.items.map(\.id), [leftover.id])
+        XCTAssertEqual(pruned.memory.totalBytes, 8)
+        XCTAssertEqual(pruned.disk.totalBytes, 100)
+    }
+
+    func testRemovingItemsWithEmptySetKeepsReport() {
+        let item = ScanItem(
+            category: .caches,
+            title: "Cache",
+            detail: "",
+            impactLabel: "",
+            impactBytes: 1,
+            risk: .safe,
+            action: .deletePath(path: "/tmp/cache", bytes: 1),
+            evidence: ""
+        )
+        let report = ScanReport(
+            generatedAt: Date(),
+            items: [item],
+            memory: MemoryStats(totalBytes: 8, usedBytes: 4, swapUsedBytes: 0, pressure: .normal),
+            disk: DiskStats(totalBytes: 100, usedBytes: 60, freeBytes: 40)
+        )
+
+        XCTAssertEqual(report.removingItems(withIDs: []).items.map(\.id), [item.id])
+    }
+
+    func testRemovingItemsPrunesGroupedChildren() {
+        let child = ScanItem(
+            category: .processes,
+            title: "Helper",
+            detail: "",
+            impactLabel: "",
+            impactBytes: 5,
+            risk: .caution,
+            action: .killProcess(pid: 4242, name: "Helper"),
+            evidence: ""
+        )
+        let parent = ScanItem(
+            category: .processes,
+            title: "App",
+            detail: "",
+            impactLabel: "",
+            impactBytes: 10,
+            risk: .caution,
+            action: .killProcess(pid: 4241, name: "App"),
+            evidence: "",
+            children: [child]
+        )
+        let report = ScanReport(
+            generatedAt: Date(),
+            items: [parent],
+            memory: MemoryStats(totalBytes: 8, usedBytes: 4, swapUsedBytes: 0, pressure: .normal),
+            disk: DiskStats(totalBytes: 100, usedBytes: 60, freeBytes: 40)
+        )
+
+        let prunedChild = report.removingItems(withIDs: [child.id])
+        XCTAssertEqual(prunedChild.items.count, 1)
+        XCTAssertTrue(prunedChild.items[0].children.isEmpty)
+        XCTAssertEqual(prunedChild.items[0].id, parent.id)
+
+        let prunedParent = report.removingItems(withIDs: [parent.id])
+        XCTAssertTrue(prunedParent.items.isEmpty)
+    }
+
+    func testRemovingItemsByPathSurvivesRescanWithNewIDs() {
+        // A rescan mints brand-new UUIDs, so ID matching alone cannot catch a
+        // row that raced the Trash move. Path matching must remove it.
+        let rescanned = ScanItem(
+            category: .caches,
+            title: "Spotify cache",
+            detail: "",
+            impactLabel: "",
+            impactBytes: 10,
+            risk: .caution,
+            action: .deletePath(path: "/tmp/spotify", bytes: 10),
+            evidence: ""
+        )
+        let other = ScanItem(
+            category: .caches,
+            title: "npm cache",
+            detail: "",
+            impactLabel: "",
+            impactBytes: 5,
+            risk: .safe,
+            action: .deletePath(path: "/tmp/npm", bytes: 5),
+            evidence: ""
+        )
+        let report = ScanReport(
+            generatedAt: Date(),
+            items: [rescanned, other],
+            memory: MemoryStats(totalBytes: 8, usedBytes: 4, swapUsedBytes: 0, pressure: .normal),
+            disk: DiskStats(totalBytes: 100, usedBytes: 60, freeBytes: 40)
+        )
+
+        let pruned = report.removingItems(withIDs: [], paths: ["/tmp/spotify"])
+
+        XCTAssertEqual(pruned.items.map { $0.title }, ["npm cache"])
+    }
+
+    func testTargetPathOnlyExistsForTrashActions() {
+        XCTAssertEqual(
+            ItemAction.deletePath(path: "/tmp/x", bytes: 1).targetPath,
+            "/tmp/x"
+        )
+        XCTAssertEqual(
+            ItemAction.trashLeftover(path: "/tmp/y", bytes: 1).targetPath,
+            "/tmp/y"
+        )
+        XCTAssertNil(ItemAction.killProcess(pid: 1, name: "App").targetPath)
+        XCTAssertNil(ItemAction.none.targetPath)
+    }
+
+    func testScanItemsDefaultToFastRefreshRows() {
+        let item = ScanItem(
+            category: .disk,
+            title: "Row",
+            detail: "",
+            impactLabel: "",
+            impactBytes: nil,
+            risk: .safe,
+            action: .none,
+            evidence: ""
+        )
+
+        XCTAssertFalse(item.isSlowRefresh)
+    }
+
+    func testMergingSlowItemsKeepsThePreviousSpaceMap() {
+        let slow = ScanItem(
+            category: .disk,
+            title: "Caches",
+            detail: "",
+            impactLabel: "",
+            impactBytes: 30,
+            risk: .safe,
+            action: .none,
+            evidence: "",
+            isInformational: true,
+            isBreakdown: true,
+            isSlowRefresh: true
+        )
+        let previous = ScanReport(
+            generatedAt: Date(),
+            items: [slow],
+            memory: MemoryStats(totalBytes: 8, usedBytes: 4, swapUsedBytes: 0, pressure: .normal),
+            disk: DiskStats(totalBytes: 100, usedBytes: 60, freeBytes: 40)
+        )
+        let fresh = ScanItem(
+            category: .caches,
+            title: "npm cache",
+            detail: "",
+            impactLabel: "",
+            impactBytes: 5,
+            risk: .safe,
+            action: .deletePath(path: "/tmp/npm", bytes: 5),
+            evidence: ""
+        )
+        let quick = ScanReport(
+            generatedAt: Date(),
+            items: [fresh],
+            memory: MemoryStats(totalBytes: 8, usedBytes: 4, swapUsedBytes: 0, pressure: .normal),
+            disk: DiskStats(totalBytes: 100, usedBytes: 60, freeBytes: 50)
+        )
+
+        let merged = quick.mergingSlowItems(from: previous)
+
+        XCTAssertEqual(merged.items.count, 2)
+        XCTAssertTrue(merged.items.contains { $0.id == slow.id })
+        XCTAssertTrue(merged.items.contains { $0.id == fresh.id })
+        XCTAssertEqual(merged.disk.freeBytes, 50)
     }
 }

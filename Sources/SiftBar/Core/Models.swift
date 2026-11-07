@@ -72,6 +72,18 @@ enum ItemAction: Sendable, Equatable {
     /// installed. This is user data, not a cache, so it has its own action and
     /// a stricter confirmation path.
     case trashLeftover(path: String, bytes: Int64)
+
+    /// Filesystem location a successful action removes. Used to prune every
+    /// category view showing the same path even when a rescan mints new IDs.
+    var targetPath: String? {
+        switch self {
+        case .deletePath(let path, _), .trashLeftover(let path, _):
+            return path
+        case .none, .killProcess, .removeLoginItem, .disableLaunchItem,
+            .enableLaunchItem, .stopService:
+            return nil
+        }
+    }
 }
 
 struct ScanItem: Identifiable, Equatable, Sendable {
@@ -97,6 +109,9 @@ struct ScanItem: Identifiable, Equatable, Sendable {
     /// A measured space-map row. Informational, and rendered as a chart/legend
     /// instead of a triage row.
     let isBreakdown: Bool
+    /// Row produced by a slow `du` walk (space map, large consumers). Quick
+    /// refreshes skip these collectors and reuse the previous report's rows.
+    let isSlowRefresh: Bool
     /// Per-process rows for grouped processes. Empty for every other item.
     let children: [ScanItem]
 
@@ -114,6 +129,7 @@ struct ScanItem: Identifiable, Equatable, Sendable {
         isInformational: Bool = false,
         isProtected: Bool = false,
         isBreakdown: Bool = false,
+        isSlowRefresh: Bool = false,
         children: [ScanItem] = []
     ) {
         self.id = id
@@ -129,6 +145,7 @@ struct ScanItem: Identifiable, Equatable, Sendable {
         self.isInformational = isInformational
         self.isProtected = isProtected
         self.isBreakdown = isBreakdown
+        self.isSlowRefresh = isSlowRefresh
         self.children = children
     }
 
@@ -297,6 +314,70 @@ struct ScanReport: Sendable {
     let items: [ScanItem]
     let memory: MemoryStats
     let disk: DiskStats
+
+    /// Drops succeeded items without waiting for the next full scan. The same
+    /// item backs every category view (Disk shows caches + leftovers), so
+    /// filtering by ID keeps all tabs consistent instantly. Children of grouped
+    /// processes are pruned too when a child action succeeds. `paths` covers
+    /// the case where a concurrent scan minted new IDs: matching filesystem
+    /// paths are removed as well.
+    func removingItems(withIDs ids: Set<UUID>, paths: Set<String> = []) -> ScanReport {
+        guard !ids.isEmpty || !paths.isEmpty else { return self }
+
+        func matches(_ item: ScanItem) -> Bool {
+            if ids.contains(item.id) { return true }
+            if let path = item.action.targetPath, paths.contains(path) { return true }
+            return false
+        }
+
+        let pruned: [ScanItem] = items.compactMap { item in
+            if matches(item) { return nil }
+            guard !item.children.isEmpty else { return item }
+
+            let kept = item.children.filter { !matches($0) }
+            guard kept.count != item.children.count else { return item }
+
+            return ScanItem(
+                id: item.id,
+                category: item.category,
+                title: item.title,
+                detail: item.detail,
+                impactLabel: item.impactLabel,
+                impactBytes: item.impactBytes,
+                risk: item.risk,
+                action: item.action,
+                evidence: item.evidence,
+                warning: item.warning,
+                isInformational: item.isInformational,
+                isProtected: item.isProtected,
+                isBreakdown: item.isBreakdown,
+                isSlowRefresh: item.isSlowRefresh,
+                children: kept
+            )
+        }
+
+        return ScanReport(
+            generatedAt: generatedAt,
+            items: pruned,
+            memory: memory,
+            disk: disk
+        )
+    }
+
+    /// Combines a quick refresh (fast collectors only) with the previous
+    /// report's slow rows, so the space map stays visible while a background
+    /// pass recomputes it.
+    func mergingSlowItems(from previous: ScanReport) -> ScanReport {
+        let slow = previous.items.filter(\.isSlowRefresh)
+        guard !slow.isEmpty else { return self }
+
+        return ScanReport(
+            generatedAt: generatedAt,
+            items: ScanCoordinator.sort(items + slow),
+            memory: memory,
+            disk: disk
+        )
+    }
 }
 
 protocol Collector: Sendable {

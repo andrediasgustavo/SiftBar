@@ -43,3 +43,6 @@ coverage/
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Local handoff context
+CONTEXT.md

@@ -20,11 +20,11 @@ struct MenuContentView: View {
         }
         .keyboardShortcut("d")
 
-        Button(appState.isScanning ? "Analyzing…" : "Run Analysis") {
+        Button(menuAnalyzeLabel) {
             Task { await appState.analyze() }
         }
         .keyboardShortcut("r")
-        .disabled(appState.isScanning)
+        .disabled(appState.isScanning || appState.isApplying)
 
         Button("History…") {
             DashboardWindowController.shared.show(state: appState)
@@ -44,7 +44,7 @@ struct MenuContentView: View {
     }
 
     private var statusDot: String {
-        if appState.isScanning { return "🟠" }
+        if appState.isScanning || appState.isApplying { return "🟠" }
         guard let report = appState.report else { return "⚪️" }
 
         let findings = report.items.filter { !$0.isInformational }
@@ -55,6 +55,7 @@ struct MenuContentView: View {
 
     private var statusText: String {
         if appState.isScanning { return "Analyzing…" }
+        if appState.isApplying { return "Applying…" }
         guard let report = appState.report else { return "Ready to analyze" }
 
         let findings = report.items.filter { !$0.isInformational }
@@ -64,5 +65,11 @@ struct MenuContentView: View {
         }
 
         return "\(review) need review · \(findings.count) findings"
+    }
+
+    private var menuAnalyzeLabel: String {
+        if appState.isScanning { return "Analyzing…" }
+        if appState.isApplying { return "Applying…" }
+        return "Run Analysis"
     }
 }

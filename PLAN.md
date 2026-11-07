@@ -15,7 +15,11 @@
   matches System Settings + APFS volumes, caches are itemized per app, and
   leftovers are reviewable/actionable. The Disk tab combines the map with a
   Clean up list, protected processes are informational, and Full Disk Access
-  uses a one-time optional onboarding. See §8.
+  uses a one-time optional onboarding. Version 0.4.0 makes the post-action
+  refresh instant: succeeded items leave every view immediately (matched by
+  ID and path, with short-lived tombstones), a quick refresh updates counts in
+  seconds, and the slow space map catches up in the background without
+  locking the dashboard. See §8.
 
 ---
 

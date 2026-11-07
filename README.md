@@ -16,6 +16,21 @@ exact command SiftBar will run. Nothing happens without your confirmation.
 
 ![SiftBar overview](docs/screenshots/overview.png)
 
+## What's new in 0.4.0
+
+- **Instant removal after every action.** Succeeded items leave the Overview,
+  Disk, and Caches views immediately — no waiting for the next scan. Rows are
+  matched by ID and path, so a scan that raced the Trash move cannot bring a
+  deleted item back.
+- **Quick refresh, background space map.** After applying actions, the list
+  and counts update in a couple of seconds, then the slow space map and large
+  file walk catch up in the background without freezing the dashboard.
+- **No acting on stale rows.** While a scan or an action batch is running,
+  checkboxes, quick actions, and Apply are disabled so an outdated row cannot
+  be run twice. Finder reveal and navigation stay available.
+- Deleted paths are tombstoned briefly; if an app recreates a cache, it
+  reappears with its real, freshly measured size on the next scan.
+
 ## What's new in 0.3.1
 
 - New documentation screenshots generated from synthetic demo data.

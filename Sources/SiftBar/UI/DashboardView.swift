@@ -204,10 +204,10 @@ struct DashboardView: View {
                 Button {
                     Task { await appState.analyze() }
                 } label: {
-                    Label(appState.isScanning ? "Analyzing…" : "Analyze", systemImage: "magnifyingglass")
+                    Label(analyzeLabel, systemImage: "magnifyingglass")
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(appState.isScanning)
+                .disabled(isBusy || appState.isScanning)
             }
 
             Text(pageDescription)
@@ -253,6 +253,7 @@ struct DashboardView: View {
                 Button("Needs Review") { actions.selectNeedingReview(flattened(filteredItems)) }
             }
             .frame(width: 80)
+            .disabled(isBusy)
 
             Spacer(minLength: 0)
 
@@ -325,9 +326,13 @@ struct DashboardView: View {
                 hasChildren: !row.item.children.isEmpty,
                 isExpanded: expanded.contains(row.item.id),
                 onToggleExpanded: { expanded.toggle(row.item.id) },
-                onToggle: { actions.toggle(row.item) },
+                onToggle: {
+                    guard !isBusy else { return }
+                    actions.toggle(row.item)
+                },
                 quickActionTitle: quickActionTitle(for: row.item, isChild: row.isChild),
-                onQuickAction: { performQuickAction(for: row.item, isChild: row.isChild) }
+                onQuickAction: { performQuickAction(for: row.item, isChild: row.isChild) },
+                controlsDisabled: isBusy
             )
 
             if index < display.count - 1 {
@@ -361,6 +366,9 @@ struct DashboardView: View {
         if item.isProtected { return "Activity Monitor" }
         if item.category == .disk && item.title == "Startup disk" && item.risk != .safe { return "Review caches" }
         if item.category == .memory && item.risk != .safe { return "Open Processes" }
+        // While the list is stale (scan or batch running), hide mutating quick
+        // actions. Navigation aids above stay available.
+        if isBusy { return nil }
         guard item.canBeChanged else { return nil }
 
         switch item.action {
@@ -383,6 +391,7 @@ struct DashboardView: View {
         } else if item.category == .memory && item.risk != .safe {
             page.selection = .category(.processes)
         } else {
+            guard !isBusy else { return }
             actions.beginConfirmation(with: [item])
         }
     }
@@ -432,10 +441,11 @@ struct DashboardView: View {
                             .buttonStyle(.link)
 
                         Button(ActionExecutor.title(for: selected)) {
+                            guard !isBusy else { return }
                             actions.beginConfirmation(with: selected)
                         }
                         .buttonStyle(.borderedProminent)
-                        .disabled(actions.isRunning)
+                        .disabled(actions.isRunning || appState.isScanning)
                     }
                 }
                 .padding(.horizontal, 24)
@@ -991,7 +1001,7 @@ struct DashboardView: View {
 
         let headline: String
         if actions.failedCount > 0 {
-            headline = "\(actions.changedCount) of \(actions.reports.count) completed"
+            headline = "\(actions.changedCount) of \(actions.reports.count) succeeded"
         } else if actions.diskMovedBytes > 0 && actions.memoryReleasedBytes > 0 {
             headline = "\(format(actions.diskMovedBytes)) moved to Trash · \(formatMemory(UInt64(actions.memoryReleasedBytes))) RAM released"
         } else if actions.diskMovedBytes > 0 {
@@ -1108,6 +1118,20 @@ struct DashboardView: View {
 
     // MARK: - Data
 
+    /// True while the visible list is stale: a quick refresh or an action
+    /// batch is running. Selection and mutating actions are disabled; the
+    /// already-pruned succeeded items never reappear as stale rows. A
+    /// background map refresh does not lock the list.
+    private var isBusy: Bool {
+        appState.locksInteraction || actions.isRunning
+    }
+
+    private var analyzeLabel: String {
+        if actions.isRunning { return "Applying…" }
+        if appState.isScanning { return "Analyzing…" }
+        return "Analyze"
+    }
+
     private var allItems: [ScanItem] {
         appState.report?.items ?? []
     }
@@ -1174,8 +1198,30 @@ struct DashboardView: View {
 
     private func confirmActions() {
         Task {
+            // Capture targets before running: `pending` is cleared by `run()`.
+            let targets = actions.pending
+            appState.beginApplying()
             await actions.run()
-            await appState.analyze()
+            // Instant refresh: drop succeeded rows from every category view
+            // (Disk and Caches share the same items) before the slow `du`
+            // rescan finishes. Paths cover rescans that minted new IDs;
+            // tombstones in AppState stop a raced scan from resurrecting them.
+            // Failed rows stay for the rescan to correct.
+            let succeeded = actions.succeededIDs
+            if !succeeded.isEmpty {
+                let paths = Set(
+                    targets
+                        .filter { succeeded.contains($0.id) }
+                        .compactMap { $0.action.targetPath }
+                )
+                appState.removeItems(withIDs: succeeded, paths: paths)
+            }
+            appState.endApplying()
+            // Fast refresh first: the list and counts update in a couple of
+            // seconds. The slow `du` space map then catches up in the
+            // background without freezing selection.
+            await appState.refreshQuickly()
+            await appState.refreshInBackground()
         }
     }
 }

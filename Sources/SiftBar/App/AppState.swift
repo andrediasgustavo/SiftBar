@@ -6,6 +6,8 @@ final class AppState: ObservableObject {
     static let shared = AppState()
 
     @Published private(set) var isScanning = false
+    @Published private(set) var locksInteraction = false
+    @Published private(set) var isApplying = false
     @Published private(set) var status = "Ready to analyze."
     @Published private(set) var report: ScanReport?
     @Published private(set) var errorMessage: String?
@@ -17,6 +19,13 @@ final class AppState: ObservableObject {
 
     private let onboardingKey = "SiftBar.hasSeenAccessOnboarding"
     private var demoMode = false
+    private var scanInFlight = false
+    /// Paths removed by confirmed actions, with the removal time. A scan that
+    /// started before the Trash move finished (or a ⌘R fired mid-batch) would
+    /// otherwise bring the stale row back with a brand-new ID. Entries expire
+    /// quickly: a cache the app recreates shows up again on the next scan.
+    private var deletedPaths: [String: Date] = [:]
+    private static let tombstoneLifetime: TimeInterval = 120
 
     private init() {
         refreshAccess()
@@ -31,19 +40,56 @@ final class AppState: ObservableObject {
     }
 
     func analyze() async {
-        guard !isScanning else { return }
+        await performScan(quick: false, locksUI: true)
+    }
 
+    /// Refresh used right after a confirmed action batch. Skips the slow `du`
+    /// collectors (space map, large consumers) so the list and counts update
+    /// in a couple of seconds; the previous map rows are kept until the
+    /// background pass replaces them.
+    func refreshQuickly() async {
+        await performScan(quick: true, locksUI: true)
+    }
+
+    /// Full refresh that does not disable the list, so the space map can catch
+    /// up after a quick refresh without freezing selection.
+    func refreshInBackground() async {
+        await performScan(quick: false, locksUI: false)
+    }
+
+    private func performScan(quick: Bool, locksUI: Bool) async {
+        guard !scanInFlight, !isApplying else { return }
+
+        scanInFlight = true
         demoMode = false
         refreshAccess()
-        isScanning = true
         errorMessage = nil
-        status = "Scanning memory, processes, startup items, services, disk, caches and leftovers..."
-        defer { isScanning = false }
+        isScanning = true
+        locksInteraction = locksUI
+
+        if quick {
+            status = "Refreshing after your changes…"
+        } else if locksUI {
+            status = "Scanning memory, processes, startup items, services, disk, caches and leftovers..."
+        } else {
+            status = "Refreshing the space map in the background…"
+        }
+
+        defer {
+            scanInFlight = false
+            isScanning = false
+            locksInteraction = false
+        }
 
         let startedAt = Date()
-        let result = await ScanCoordinator.run(
-            includeProtectedFolders: includesProtectedFolders
+        var result = await ScanCoordinator.run(
+            includeProtectedFolders: includesProtectedFolders,
+            includeSlowCollectors: !quick
         )
+        if quick, let current = report {
+            result = result.mergingSlowItems(from: current)
+        }
+        result = result.removingItems(withIDs: [], paths: activeTombstones())
 
         report = result
         let duration = Date().timeIntervalSince(startedAt)
@@ -53,6 +99,17 @@ final class AppState: ObservableObject {
             result.items.count,
             duration
         )
+    }
+
+    /// Marks the start/end of a confirmed action batch. While applying, new
+    /// scans are refused so a stale `du` walk cannot overwrite the instant
+    /// prune that already removed the rows from every category.
+    func beginApplying() {
+        isApplying = true
+    }
+
+    func endApplying() {
+        isApplying = false
     }
 
     func refreshAccess() {
@@ -135,5 +192,31 @@ final class AppState: ObservableObject {
         lastDuration = nil
         status = "Ready to analyze."
         errorMessage = nil
+    }
+
+    private func activeTombstones(now: Date = Date()) -> Set<String> {
+        purgeTombstones(now: now)
+        return Set(deletedPaths.keys)
+    }
+
+    private func purgeTombstones(now: Date) {
+        deletedPaths = deletedPaths.filter {
+            now.timeIntervalSince($0.value) < Self.tombstoneLifetime
+        }
+    }
+
+    /// Removes succeeded items immediately so every category (Overview, Disk,
+    /// Caches) stops offering them while the slower full rescan runs. Paths
+    /// are tombstoned briefly so a scan that raced the batch cannot resurrect
+    /// the rows with new IDs.
+    func removeItems(withIDs ids: Set<UUID>, paths: Set<String> = []) {
+        guard !ids.isEmpty || !paths.isEmpty else { return }
+        let now = Date()
+        for path in paths {
+            deletedPaths[path] = now
+        }
+        purgeTombstones(now: now)
+        guard let current = report else { return }
+        report = current.removingItems(withIDs: ids, paths: paths)
     }
 }

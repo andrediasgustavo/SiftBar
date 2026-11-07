@@ -13,6 +13,10 @@ struct ItemRow: View {
     let onToggle: () -> Void
     let quickActionTitle: String?
     let onQuickAction: (() -> Void)?
+    /// True while a scan or an action batch is running. Selection and quick
+    /// actions are disabled so a stale row cannot be acted on twice; Finder
+    /// reveal and copy stay enabled.
+    let controlsDisabled: Bool
 
     @StateObject private var hover = HoverModel()
 
@@ -64,6 +68,7 @@ struct ItemRow: View {
                         Button(quickActionTitle, action: onQuickAction)
                             .buttonStyle(.bordered)
                             .controlSize(.small)
+                            .disabled(controlsDisabled)
                     }
                 }
 
@@ -113,6 +118,7 @@ struct ItemRow: View {
                     .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
             }
             .buttonStyle(.plain)
+            .disabled(controlsDisabled)
             .accessibilityLabel(isSelected ? "Deselect \(item.title)" : "Select \(item.title)")
             .help(isSelected ? "Deselect" : "Select")
         } else {

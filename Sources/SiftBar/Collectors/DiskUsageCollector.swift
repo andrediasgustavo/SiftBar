@@ -248,7 +248,8 @@ struct DiskUsageCollector: Collector {
                 action: .none,
                 evidence: category.evidence.joined(separator: " · "),
                 isInformational: true,
-                isBreakdown: true
+                isBreakdown: true,
+                isSlowRefresh: true
             )
         }
     }
