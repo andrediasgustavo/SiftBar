@@ -57,6 +57,17 @@ struct DashboardView: View {
         }
         .onAppear {
             appState.presentAccessSheetIfNeeded()
+
+            let arguments = CommandLine.arguments
+            if arguments.contains("--demo-result") {
+                actions.loadDemoReports()
+            }
+            if arguments.contains("--demo-confirmation"),
+               let item = appState.report?.items.first(where: {
+                   $0.category == .caches && $0.canBeChanged
+               }) {
+                actions.beginConfirmation(with: [item])
+            }
         }
         .onChange(of: page.category) { _ in
             actions.clear()
@@ -348,7 +359,7 @@ struct DashboardView: View {
     private func quickActionTitle(for item: ScanItem, isChild: Bool) -> String? {
         guard !isChild else { return nil }
         if item.isProtected { return "Activity Monitor" }
-        if item.category == .disk && item.risk != .safe { return "Review caches" }
+        if item.category == .disk && item.title == "Startup disk" && item.risk != .safe { return "Review caches" }
         if item.category == .memory && item.risk != .safe { return "Open Processes" }
         guard item.canBeChanged else { return nil }
 
@@ -367,7 +378,7 @@ struct DashboardView: View {
 
         if item.isProtected {
             ActivityMonitor.open()
-        } else if item.category == .disk && item.risk != .safe {
+        } else if item.category == .disk && item.title == "Startup disk" && item.risk != .safe {
             page.selection = .category(.caches)
         } else if item.category == .memory && item.risk != .safe {
             page.selection = .category(.processes)

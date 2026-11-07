@@ -44,10 +44,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Development hooks:
         //   open SiftBar.app --args --show-dashboard
         //   open SiftBar.app --args --show-dashboard --analyze
-        if CommandLine.arguments.contains("--show-dashboard") {
+        //   open SiftBar.app --args --demo [--demo-access|--demo-result]
+        let arguments = CommandLine.arguments
+        if arguments.contains("--demo") {
+            AppState.shared.loadDemoReport()
             DashboardWindowController.shared.show(state: AppState.shared)
 
-            if CommandLine.arguments.contains("--analyze") {
+            if arguments.contains("--demo-access") {
+                AppState.shared.presentAccessSheet()
+            }
+
+            return
+        }
+
+        if arguments.contains("--show-dashboard") {
+            DashboardWindowController.shared.show(state: AppState.shared)
+
+            if arguments.contains("--analyze") {
                 Task { await AppState.shared.analyze() }
             }
         }

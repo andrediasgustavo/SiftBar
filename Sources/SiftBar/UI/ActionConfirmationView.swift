@@ -100,8 +100,13 @@ struct ActionConfirmationView: View {
             return nil
         }
 
-        if let warning = items.compactMap(\.warning).first {
-            return warning
+        // Warnings are already shown per item above; do not repeat them in the
+        // footer. Only surface a different, batch-wide risk.
+        if items.contains(where: { $0.warning != nil }) {
+            return items.contains(where: {
+                if case .killProcess = $0.action { return true }
+                return false
+            }) ? "Quitting a process may lose unsaved work." : nil
         }
 
         if items.contains(where: { if case .killProcess = $0.action { return true }; return false }) {

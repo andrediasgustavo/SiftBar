@@ -16,6 +16,13 @@ exact command SiftBar will run. Nothing happens without your confirmation.
 
 ![SiftBar overview](docs/screenshots/overview.png)
 
+## What's new in 0.3.1
+
+- New documentation screenshots generated from synthetic demo data.
+- Disk quick actions now appear only on the row where they apply.
+- The confirmation sheet no longer repeats the same warning twice.
+- Added a hidden `--demo` mode for reproducible README screenshots.
+
 ## What's new in 0.3.0
 
 - **Memory and Disk are separate dashboards.** Memory uses the same
@@ -74,18 +81,43 @@ exact command SiftBar will run. Nothing happens without your confirmation.
 
 ## See it in action
 
-### Every finding, explained
+### Everything in one triage list
 
-![Review list](docs/screenshots/overview.png)
+![SiftBar overview](docs/screenshots/overview.png)
 
 Each row shows the risk, the title, the impact, a short explanation, and the
-source. The folder button reveals the real path in Finder.
+source. Quick actions appear where they make sense: **Quit** for an app,
+**Review** for a leftover. Informational rows are labelled `Info` and protected
+macOS processes are labelled `Protected`; neither counts as a finding.
+
+### Memory, explained like Activity Monitor
+
+![Memory dashboard](docs/screenshots/memory.png)
+
+The Memory tab uses the same app/wired/compressed definition as Activity
+Monitor. It shows pressure, swap, a proportional breakdown, and the apps using
+the most RAM with a one-click **Quit**. Memory numbers are never mixed with disk
+numbers.
+
+### Disk: where space goes and what you can clean
+
+![Disk clean-up list](docs/screenshots/disk.png)
+
+The Disk tab combines the space map with a **Clean up** list of caches and
+reviewed leftovers, with checkboxes and command previews. **Show details /
+Hide details** collapses the map so the actionable list gets more room.
+
+![Disk map and APFS volumes](docs/screenshots/disk-details.png)
+
+Expanded, the map shows the measured folders, APFS volume breakdown, and the
+part of `Used` that SiftBar will not touch. "System & other" is macOS, protected
+data, snapshots and shared APFS blocks — not a cleanup target.
 
 ### Startup & Login
 
 ![Startup and login items](docs/screenshots/startup.png)
 
-User launch agents can be disabled. System-wide items are shown with a lock
+User launch agents can be disabled. System-wide daemons are shown with a lock
 because they require administrator rights; SiftBar will not touch them.
 
 ### Confirmation, not automation
@@ -99,8 +131,21 @@ bulk "clean everything" button, no hidden actions.
 
 ![Cleanup result](docs/screenshots/result.png)
 
-*Example result after a cleanup.* SiftBar rescans and shows how much was
-reclaimed, how many items succeeded, and whether anything failed.
+*Example result from synthetic demo data.* SiftBar reports disk bytes moved to
+the Trash separately from RAM released by quitting apps, and reminds you to
+empty the Trash to actually free the space.
+
+### One optional permission, not a wall of prompts
+
+![Full Disk Access onboarding](docs/screenshots/access.png)
+
+macOS protects Desktop, Documents and Downloads separately. The first time you
+open the dashboard, SiftBar explains what is missing and offers one optional
+Full Disk Access grant. Choose **Not now** and the app keeps working with a
+partial disk map; a small note in the Disk tab lets you complete access later.
+No repeated folder prompts.
+
+*Screenshots use synthetic demo data (`--demo`); no real user paths or apps.*
 
 ## Safe by design
 
@@ -108,8 +153,9 @@ reclaimed, how many items succeeded, and whether anything failed.
 - **No "clean everything" button.** Every action is item by item.
 - **Full transparency.** The command is shown before it runs.
 - **Never touches SIP-protected paths** such as `/System` and `AssetsV2`.
-- **Critical processes are never actionable.** Protected system processes are
-  classified as dangerous and cannot be terminated.
+- **Protected processes are never actionable.** They are labelled `Protected`,
+  excluded from the review count, and offer Activity Monitor instead of a
+  kill action.
 - **Only whitelisted cache paths can be moved to the Trash.** The executor
   checks again before acting, including path traversal and symlink escapes.
 - **System-wide launch items stay locked** unless SiftBar has administrator
@@ -263,7 +309,7 @@ Use the table below to find where each value lives.
 |---|---|---|
 | Bundle identifier | `com.andredias.siftbar` | `Resources/Info.plist` → `CFBundleIdentifier` |
 | Display name | `SiftBar` | `Resources/Info.plist` → `CFBundleDisplayName` / `CFBundleName` |
-| Version | `0.3.0` (build `5`) | `Resources/Info.plist` → `CFBundleShortVersionString` / `CFBundleVersion` |
+| Version | `0.3.1` (build `6`) | `Resources/Info.plist` → `CFBundleShortVersionString` / `CFBundleVersion` |
 | Minimum macOS | `13.0` | `Resources/Info.plist` → `LSMinimumSystemVersion`, `Package.swift` → `.macOS(.v13)`, `scripts/build.sh` → `-target` |
 | Menu bar only | enabled | `Resources/Info.plist` → `LSUIElement` |
 | Build configuration | `release` | First argument to `scripts/build.sh` / `scripts/run.sh` (`release` or `debug`) |
@@ -295,6 +341,19 @@ On a Command Line Tools-only machine, use the local fallback:
 It compiles a small XCTest-compatible module, builds the app as a testable
 library, generates a runner from every `func test…`, and executes the same
 suite without `XCTest.framework` or SwiftPM.
+
+### Screenshot mode
+
+README images are generated from synthetic data, so they never expose a real
+user's paths or apps:
+
+```bash
+./scripts/build.sh release
+dist/SiftBar.app/Contents/MacOS/SiftBar --demo
+dist/SiftBar.app/Contents/MacOS/SiftBar --demo --demo-access
+dist/SiftBar.app/Contents/MacOS/SiftBar --demo --demo-confirmation
+dist/SiftBar.app/Contents/MacOS/SiftBar --demo --demo-result
+```
 
 The suite has 246 tests covering command execution (including output larger
 than a pipe buffer), every parser (`vm_stat`, `top`, swap, `df`, `ps`,

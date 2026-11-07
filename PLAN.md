@@ -10,7 +10,7 @@
 - **Provisional bundle ID:** `com.andredias.siftbar`
 - **Minimum target:** macOS 13.0+ (Apple Silicon; Intel is not a priority)
 - **Language:** code, comments, documentation, and UI are English
-- **Status:** Phases 0–4 complete; Phase 6 partially complete. Version 0.3.0
+- **Status:** Phases 0–4 complete; Phase 6 partially complete. Version 0.3.1
   rewrites the analysis layer: memory and disk are separate tabs, disk usage
   matches System Settings + APFS volumes, caches are itemized per app, and
   leftovers are reviewable/actionable. The Disk tab combines the map with a

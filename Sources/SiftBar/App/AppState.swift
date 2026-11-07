@@ -16,6 +16,7 @@ final class AppState: ObservableObject {
     @Published var isAccessSheetPresented = false
 
     private let onboardingKey = "SiftBar.hasSeenAccessOnboarding"
+    private var demoMode = false
 
     private init() {
         refreshAccess()
@@ -32,6 +33,7 @@ final class AppState: ObservableObject {
     func analyze() async {
         guard !isScanning else { return }
 
+        demoMode = false
         refreshAccess()
         isScanning = true
         errorMessage = nil
@@ -54,6 +56,12 @@ final class AppState: ObservableObject {
     }
 
     func refreshAccess() {
+        if demoMode {
+            accessStatus = .granted
+            includesProtectedFolders = true
+            return
+        }
+
         accessStatus = FullDiskAccess.status()
         includesProtectedFolders = accessStatus == .granted || FullDiskAccess.allowsFolderPrompts
     }
@@ -107,6 +115,19 @@ final class AppState: ObservableObject {
         markOnboardingSeen()
         isAccessSheetPresented = false
         Task { await analyze() }
+    }
+
+    /// Synthetic data for README screenshots. Never used by a normal scan.
+    func loadDemoReport() {
+        demoMode = true
+        report = DemoReport.make()
+        lastDuration = 1.2
+        status = "Found 24 items in 1.2s. Nothing has been changed."
+        includesProtectedFolders = true
+        accessStatus = .granted
+        isAccessSheetPresented = false
+        accessHint = nil
+        errorMessage = nil
     }
 
     func clearReport() {

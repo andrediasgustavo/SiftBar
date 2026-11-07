@@ -119,6 +119,14 @@ final class ReviewActionModel: ObservableObject {
     func dismissSummary() {
         reports = []
     }
+
+    /// README/demo hook: show a realistic success card without touching disk.
+    func loadDemoReports() {
+        let caches = DemoReport.make().items.filter { $0.category == .caches }
+        reports = caches.prefix(2).map { item in
+            ActionReport(item: item, success: true, message: "Moved to Trash")
+        }
+    }
 }
 
 /// A page in the review sidebar. Non-optional so `List` selection matches the
