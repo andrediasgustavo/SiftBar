@@ -133,90 +133,90 @@ struct DiskUsageCollector: Collector {
         let home = sizes.home
         let library = sizes.library
 
-        let content: [(String, String)] = [
-            ("Desktop", "~/Desktop"),
-            ("Documents", "~/Documents"),
-            ("Downloads", "~/Downloads")
+        let content: [(name: String, path: String)] = [
+            (name: "Desktop", path: "~/Desktop"),
+            (name: "Documents", path: "~/Documents"),
+            (name: "Downloads", path: "~/Downloads")
         ]
 
-        let contentBytes = content.reduce(Int64(0)) { $0 + (home[$1.0] ?? 0) }
+        let contentBytes = sum(content.map { home[$0.name] ?? 0 })
+        let developerBytes = sum([
+            library["Developer"] ?? 0,
+            library["Android"] ?? 0,
+            home[".android"] ?? 0,
+            home[".gradle"] ?? 0,
+            home[".npm"] ?? 0
+        ])
+        let appDataBytes = sum([
+            library["Application Support"] ?? 0,
+            library["Containers"] ?? 0,
+            library["Group Containers"] ?? 0
+        ])
+        let cachesBytes: Int64 = library["Caches"] ?? 0
+        let iCloudBytes: Int64 = library["Mobile Documents"] ?? 0
 
-        let developerBytes =
-            (library["Developer"] ?? 0)
-            + (library["Android"] ?? 0)
-            + (home[".android"] ?? 0)
-            + (home[".gradle"] ?? 0)
-            + (home[".npm"] ?? 0)
+        var knownHome = content.map { $0.name }
+        knownHome.append(contentsOf: [
+            "Library", ".android", ".gradle", ".npm", ".cache", ".cargo", ".rustup"
+        ])
+        let knownHomeSet = Set(knownHome)
 
-        let appDataBytes =
-            (library["Application Support"] ?? 0)
-            + (library["Containers"] ?? 0)
-            + (library["Group Containers"] ?? 0)
+        var otherHomeBytes: Int64 = 0
+        for (name, bytes) in home where !knownHomeSet.contains(name) && !name.hasPrefix(".") {
+            otherHomeBytes += bytes
+        }
 
-        let cachesBytes = library["Caches"] ?? 0
-        let iCloudBytes = library["Mobile Documents"] ?? 0
+        var categories: [Category] = []
+        categories.append(Category(
+            name: "Applications",
+            bytes: sizes.applications,
+            detail: "App bundles in /Applications and ~/Applications.",
+            evidence: ["du -sk /Applications", "du -sk ~/Applications"]
+        ))
+        categories.append(Category(
+            name: "Documents & media",
+            bytes: contentBytes,
+            detail: "Desktop, Documents and Downloads.",
+            evidence: content.map { "du -sk \($0.path)" }
+        ))
+        categories.append(Category(
+            name: "Developer",
+            bytes: developerBytes,
+            detail: "Xcode, Android SDK/emulator, Gradle and npm data.",
+            evidence: ["du -sk ~/Library/Developer", "du -sk ~/Library/Android"]
+        ))
+        categories.append(Category(
+            name: "App data",
+            bytes: appDataBytes,
+            detail: "Application Support, Containers and Group Containers. This is app data, not cache.",
+            evidence: ["du -sk ~/Library/Application Support", "du -sk ~/Library/Containers"]
+        ))
+        categories.append(Category(
+            name: "Caches",
+            bytes: cachesBytes,
+            detail: "Recreatable caches. The Caches tab lists what SiftBar can move to the Trash.",
+            evidence: ["du -sk ~/Library/Caches"]
+        ))
+        categories.append(Category(
+            name: "iCloud Drive",
+            bytes: iCloudBytes,
+            detail: "Files stored in iCloud Drive and downloaded to this Mac.",
+            evidence: ["du -sk ~/Library/Mobile Documents"]
+        ))
+        categories.append(Category(
+            name: "Other user folders",
+            bytes: otherHomeBytes,
+            detail: "Other folders directly in your home folder, such as project folders.",
+            evidence: ["du -d 1 -k ~"]
+        ))
+        categories.append(Category(
+            name: "System-wide data",
+            bytes: sizes.systemLibrary,
+            detail: "Support files and caches installed in /Library.",
+            evidence: ["du -d 1 -k /Library"]
+        ))
 
-        let knownHome: Set<String> = Set(
-            content.map(\.0)
-                + ["Library", ".android", ".gradle", ".npm"]
-                + [".cache", ".cargo", ".rustup"]
-        )
-        let otherHomeBytes = home
-            .filter { !knownHome.contains($0.key) && !$0.key.hasPrefix(".") }
-            .reduce(Int64(0)) { $0 + $1.value }
-
-        var categories: [Category] = [
-            Category(
-                name: "Applications",
-                bytes: sizes.applications,
-                detail: "App bundles in /Applications and ~/Applications.",
-                evidence: ["du -sk /Applications", "du -sk ~/Applications"]
-            ),
-            Category(
-                name: "Documents & media",
-                bytes: contentBytes,
-                detail: "Desktop, Documents and Downloads.",
-                evidence: content.map { "du -sk \($0.1)" }
-            ),
-            Category(
-                name: "Developer",
-                bytes: developerBytes,
-                detail: "Xcode, Android SDK/emulator, Gradle and npm data.",
-                evidence: ["du -sk ~/Library/Developer", "du -sk ~/Library/Android"]
-            ),
-            Category(
-                name: "App data",
-                bytes: appDataBytes,
-                detail: "Application Support, Containers and Group Containers. This is app data, not cache.",
-                evidence: ["du -sk ~/Library/Application Support", "du -sk ~/Library/Containers"]
-            ),
-            Category(
-                name: "Caches",
-                bytes: cachesBytes,
-                detail: "Recreatable caches. The Caches tab lists what SiftBar can move to the Trash.",
-                evidence: ["du -sk ~/Library/Caches"]
-            ),
-            Category(
-                name: "iCloud Drive",
-                bytes: iCloudBytes,
-                detail: "Files stored in iCloud Drive and downloaded to this Mac.",
-                evidence: ["du -sk ~/Library/Mobile Documents"]
-            ),
-            Category(
-                name: "Other user folders",
-                bytes: otherHomeBytes,
-                detail: "Other folders directly in your home folder, such as project folders.",
-                evidence: ["du -d 1 -k ~"]
-            ),
-            Category(
-                name: "System-wide data",
-                bytes: sizes.systemLibrary,
-                detail: "Support files and caches installed in /Library.",
-                evidence: ["du -d 1 -k /Library"]
-            )
-        ]
-
-        let measured = categories.reduce(Int64(0)) { $0 + $1.bytes }
+        let measured = sum(categories.map { $0.bytes })
         let remainder = max(0, disk.usedBytes - measured)
         if remainder > 0 {
             categories.append(Category(
@@ -227,11 +227,13 @@ struct DiskUsageCollector: Collector {
             ))
         }
 
-        return categories
-            .filter { $0.bytes >= minimumBytes }
-            .sorted { $0.bytes > $1.bytes }
-            .prefix(limit)
-            .map { $0 }
+        let filtered = categories.filter { $0.bytes >= minimumBytes }
+        let sorted = filtered.sorted { $0.bytes > $1.bytes }
+        return Array(sorted.prefix(limit))
+    }
+
+    private static func sum(_ values: [Int64]) -> Int64 {
+        values.reduce(0, +)
     }
 
     static func items(sizes: Sizes, disk: DiskStats) -> [ScanItem] {
