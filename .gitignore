@@ -44,5 +44,6 @@ coverage/
 __pycache__/
 *.pyc
 
-# Local handoff context
+# Local and internal docs
 CONTEXT.md
+PLAN.md
