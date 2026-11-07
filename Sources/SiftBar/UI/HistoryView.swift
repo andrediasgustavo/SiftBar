@@ -71,9 +71,10 @@ struct HistoryView: View {
                 Spacer()
 
                 if record.reclaimedBytes > 0 {
-                    Text("\(format(record.reclaimedBytes)) freed")
+                    Text("\(format(record.reclaimedBytes)) reclaimed")
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.green)
+                        .help("Disk bytes moved to Trash plus RAM released by quitting apps. Empty the Trash to actually free disk space.")
                 }
 
                 Text("\(record.succeeded) succeeded · \(record.failed) failed")

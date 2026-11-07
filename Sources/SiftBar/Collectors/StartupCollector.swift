@@ -126,9 +126,9 @@ struct StartupCollector: Collector {
                         ? "Disabled launch item: \(label)"
                         : "Launch item: \(label)",
                     detail: isDisabled
-                        ? "Disabled with launchctl. Enable it to load it again at login. Registered in \(directory)."
-                        : "Registered in \(directory). Disable it only if the related app or service is no longer needed.",
-                    impactLabel: isDisabled ? "disabled" : "launch agent",
+                        ? "Disabled with launchctl. Enable it to load it again at login. Registered in \(directory) as a \(kind(forDirectory: directory))."
+                        : "Registered in \(directory) as a \(kind(forDirectory: directory)). Disable it only if the related app or service is no longer needed.",
+                    impactLabel: isDisabled ? "disabled" : kind(forDirectory: directory),
                     impactBytes: nil,
                     risk: risk(forDirectory: directory),
                     action: isDisabled
@@ -148,5 +148,9 @@ struct StartupCollector: Collector {
     /// daemons require admin rights, so they deserve extra attention.
     static func risk(forDirectory directory: String) -> Risk {
         directory.hasPrefix("/Library/") ? .caution : .safe
+    }
+
+    static func kind(forDirectory directory: String) -> String {
+        directory.contains("/LaunchDaemons") ? "launch daemon" : "launch agent"
     }
 }

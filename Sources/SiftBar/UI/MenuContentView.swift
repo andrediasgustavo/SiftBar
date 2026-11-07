@@ -47,8 +47,9 @@ struct MenuContentView: View {
         if appState.isScanning { return "🟠" }
         guard let report = appState.report else { return "⚪️" }
 
-        if report.items.contains(where: { $0.risk == .dangerous }) { return "🔴" }
-        if report.items.contains(where: { $0.risk == .caution }) { return "🟠" }
+        let findings = report.items.filter { !$0.isInformational }
+        if findings.contains(where: { $0.risk == .dangerous }) { return "🔴" }
+        if findings.contains(where: { $0.risk == .caution }) { return "🟠" }
         return "🟢"
     }
 
@@ -56,11 +57,12 @@ struct MenuContentView: View {
         if appState.isScanning { return "Analyzing…" }
         guard let report = appState.report else { return "Ready to analyze" }
 
-        let review = report.items.filter { $0.risk != .safe }.count
+        let findings = report.items.filter { !$0.isInformational }
+        let review = findings.filter { $0.risk != .safe }.count
         if review == 0 {
-            return "All clear · \(report.items.count) items"
+            return "All clear · \(findings.count) findings"
         }
 
-        return "\(review) need review · \(report.items.count) items"
+        return "\(review) need review · \(findings.count) findings"
     }
 }

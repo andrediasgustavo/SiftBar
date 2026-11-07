@@ -78,6 +78,28 @@ final class ActionExecutorTests: XCTestCase {
         XCTAssertEqual(ActionExecutor.preview(for: .none), "No action")
     }
 
+    func testPreviewAndVerbForTrashLeftover() {
+        let action = ItemAction.trashLeftover(path: "/tmp/Leftover", bytes: 10)
+
+        XCTAssertEqual(
+            ActionExecutor.preview(for: action),
+            "Move leftover app data to Trash: /tmp/Leftover"
+        )
+        XCTAssertEqual(ActionExecutor.verb(for: action), "Move to Trash")
+        XCTAssertEqual(ActionExecutor.title(for: [item(action: action)]), "Move Leftover to Trash…")
+    }
+
+    func testTrashLeftoverIsChangeableAndRevealable() {
+        let item = item(
+            action: .trashLeftover(path: "/Users/tester/Library/Application Support/Leftover", bytes: 10),
+            evidence: "/Users/tester/Library/Application Support/Leftover"
+        )
+
+        XCTAssertTrue(item.canBeChanged)
+        XCTAssertEqual(item.revealURL?.path, "/Users/tester/Library/Application Support/Leftover")
+        XCTAssertEqual(item.reclaimDomain, .disk)
+    }
+
     func testVerbsMatchTheAction() {
         XCTAssertEqual(ActionExecutor.verb(for: .killProcess(pid: 1, name: "Foo")), "Quit")
         XCTAssertEqual(ActionExecutor.verb(for: .disableLaunchItem(label: "x")), "Disable")

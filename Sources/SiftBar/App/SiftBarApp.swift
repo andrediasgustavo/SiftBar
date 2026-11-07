@@ -18,7 +18,8 @@ struct SiftBarApp: App {
     private var menuBarTitle: String {
         guard let report = appState.report else { return "SiftBar" }
 
-        let review = report.items.filter { $0.risk != .safe }.count
+        let findings = report.items.filter { !$0.isInformational }
+        let review = findings.filter { $0.risk != .safe }.count
         return review == 0 ? "SiftBar · all clear" : "SiftBar · \(review) need review"
     }
 
@@ -26,7 +27,7 @@ struct SiftBarApp: App {
         if appState.isScanning { return "arrow.triangle.2.circlepath" }
 
         if let report = appState.report,
-           report.items.contains(where: { $0.risk == .dangerous }) {
+           report.items.contains(where: { !$0.isInformational && $0.risk == .dangerous }) {
             return "exclamationmark.triangle.fill"
         }
 

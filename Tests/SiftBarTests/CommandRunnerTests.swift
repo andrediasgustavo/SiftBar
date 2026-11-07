@@ -47,6 +47,16 @@ final class CommandRunnerTests: XCTestCase {
         XCTAssertEqual(result.stdout, "<><x>")
     }
 
+    func testDrainsOutputLargerThanThePipeBuffer() async throws {
+        let result = try await CommandRunner.run(
+            "/bin/sh",
+            arguments: ["-c", "i=0; while [ $i -lt 5000 ]; do echo 0123456789012345678901234567890123456789; i=$((i+1)); done"]
+        )
+
+        XCTAssertGreaterThan(result.stdout.count, 100_000)
+        XCTAssertEqual(result.exitCode, 0)
+    }
+
     func testMissingExecutableThrowsLaunchFailed() async {
         do {
             _ = try await CommandRunner.run("/nonexistent/siftbar-test-binary")

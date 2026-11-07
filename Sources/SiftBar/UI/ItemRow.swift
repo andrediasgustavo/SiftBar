@@ -11,6 +11,8 @@ struct ItemRow: View {
     let isExpanded: Bool
     let onToggleExpanded: () -> Void
     let onToggle: () -> Void
+    let quickActionTitle: String?
+    let onQuickAction: (() -> Void)?
 
     @StateObject private var hover = HoverModel()
 
@@ -20,11 +22,24 @@ struct ItemRow: View {
                 .frame(width: 16, alignment: .leading)
 
             riskColumn
-                .frame(width: 58, alignment: .leading)
+                .frame(width: 72, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        if hasChildren {
+                            Button(action: onToggleExpanded) {
+                                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 12, height: 16)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .help(isExpanded ? "Hide individual processes" : "Show individual processes")
+                            .accessibilityLabel(isExpanded ? "Collapse processes" : "Expand processes")
+                        }
+
                         if showsCategory {
                             Image(systemName: item.category.symbol)
                                 .font(.caption2)
@@ -44,6 +59,12 @@ struct ItemRow: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .frame(minWidth: 70, alignment: .trailing)
+
+                    if let quickActionTitle, let onQuickAction, !isChild {
+                        Button(quickActionTitle, action: onQuickAction)
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                    }
                 }
 
                 Text(item.detail)
@@ -73,6 +94,11 @@ struct ItemRow: View {
                 Divider()
             }
 
+            if item.category == .processes {
+                Button("Open in Activity Monitor") { ActivityMonitor.open() }
+                Divider()
+            }
+
             Button("Copy Evidence") { copy(item.evidence) }
             Button("Copy Summary") { copy("\(item.title) — \(item.detail)") }
         }
@@ -80,18 +106,7 @@ struct ItemRow: View {
 
     @ViewBuilder
     private var selectionControl: some View {
-        if hasChildren {
-            Button(action: onToggleExpanded) {
-                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 16, height: 20)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(isExpanded ? "Hide individual processes" : "Show individual processes")
-            .accessibilityLabel(isExpanded ? "Collapse processes" : "Expand processes")
-        } else if canSelect {
+        if canSelect {
             Button(action: onToggle) {
                 Image(systemName: isSelected ? "checkmark.square.fill" : "square")
                     .font(.system(size: 14))
@@ -101,25 +116,58 @@ struct ItemRow: View {
             .accessibilityLabel(isSelected ? "Deselect \(item.title)" : "Select \(item.title)")
             .help(isSelected ? "Deselect" : "Select")
         } else {
-            Image(systemName: item.requiresAdmin ? "lock.fill" : "minus")
+            Image(systemName: item.requiresAdmin || item.isProtected ? "lock.fill" : "minus")
                 .font(.system(size: 10))
                 .foregroundStyle(.tertiary)
-                .help(item.requiresAdmin
-                      ? "Requires administrator rights. SiftBar will not change it."
-                      : "SiftBar will not change this item.")
-                .accessibilityLabel(item.requiresAdmin ? "Requires administrator rights" : "Not changeable")
+                .help(helpText)
+                .accessibilityLabel(accessibilityText)
         }
+    }
+
+    private var helpText: String {
+        if item.isProtected {
+            return "Protected system process. SiftBar will not quit it; open Activity Monitor for details."
+        }
+        if item.requiresAdmin {
+            return "Requires administrator rights. SiftBar will not change it."
+        }
+        return "SiftBar will not change this item."
+    }
+
+    private var accessibilityText: String {
+        if item.isProtected { return "Protected system process" }
+        return item.requiresAdmin ? "Requires administrator rights" : "Not changeable"
     }
 
     /// A fixed-width risk column keeps every title on the same vertical line.
     private var riskColumn: some View {
         HStack(spacing: 6) {
-            RiskDot(risk: item.risk)
+            if item.isProtected {
+                Image(systemName: "lock.shield")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
 
-            Text(item.risk.label)
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(item.risk == .dangerous ? Color.primary : Color.secondary)
-                .lineLimit(1)
+                Text("Protected")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            } else if item.isInformational {
+                Circle()
+                    .fill(Color.secondary.opacity(0.45))
+                    .frame(width: 7, height: 7)
+
+                Text("Info")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            } else {
+                RiskDot(risk: item.risk)
+
+                Text(item.risk.label)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(item.risk == .dangerous ? Color.primary : Color.secondary)
+                    .lineLimit(1)
+            }
         }
     }
 
@@ -204,6 +252,15 @@ enum FinderReveal {
         } else {
             NSWorkspace.shared.activateFileViewerSelecting([url])
         }
+    }
+}
+
+/// Protected processes cannot be quit from SiftBar. Activity Monitor is the
+/// right place to inspect them, so the row offers that instead of a dead end.
+enum ActivityMonitor {
+    static func open() {
+        let url = URL(fileURLWithPath: "/System/Applications/Utilities/Activity Monitor.app")
+        NSWorkspace.shared.open(url)
     }
 }
 

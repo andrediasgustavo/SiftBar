@@ -23,6 +23,39 @@ enum CleanupWhitelist {
         allows(path, roots: roots(home: home))
     }
 
+    /// Leftovers are user data under Application Support, never caches. They
+    /// get a separate, narrower check: exactly one top-level, non-Apple,
+    /// non-hidden folder directly inside Application Support.
+    static func allowsLeftover(
+        _ path: String,
+        home: String = FileManager.default.homeDirectoryForCurrentUser.path
+    ) -> Bool {
+        guard path.hasPrefix("/") else { return false }
+
+        let supportRoot = URL(fileURLWithPath: home)
+            .appendingPathComponent("Library/Application Support", isDirectory: true)
+            .standardizedFileURL
+            .resolvingSymlinksInPath()
+            .path
+
+        let candidate = URL(fileURLWithPath: path)
+            .standardizedFileURL
+            .resolvingSymlinksInPath()
+            .path
+
+        guard candidate.hasPrefix(supportRoot + "/") else { return false }
+
+        let relative = String(candidate.dropFirst(supportRoot.count + 1))
+        guard !relative.isEmpty,
+              !relative.contains("/"),
+              !relative.hasPrefix("."),
+              !relative.hasPrefix("com.apple.") else {
+            return false
+        }
+
+        return true
+    }
+
     /// Roots are passed explicitly so tests can use a temporary directory.
     static func allows(_ path: String, roots: [String]) -> Bool {
         guard path.hasPrefix("/") else { return false }

@@ -139,4 +139,28 @@ final class PathSizerTests: XCTestCase {
         XCTAssertNotNil(value)
         XCTAssertGreaterThan(value ?? 0, 0)
     }
+
+    func testSizesOfChildrenCanExcludeSensitiveFolders() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SiftBarTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        for (name, size) in [("Kept", 1_000_000), ("Photos", 2_000_000), (".hidden", 1_000_000)] {
+            let child = directory.appendingPathComponent(name, isDirectory: true)
+            try FileManager.default.createDirectory(at: child, withIntermediateDirectories: true)
+            try Data(repeating: 0xAB, count: size).write(to: child.appendingPathComponent("payload.bin"))
+        }
+
+        let all = await PathSizer.sizesOfChildren(of: directory.path)
+        let filtered = await PathSizer.sizesOfChildren(
+            of: directory.path,
+            excludingNames: ["photos"]
+        )
+
+        XCTAssertGreaterThan(all, filtered)
+        XCTAssertGreaterThanOrEqual(filtered, 1_000_000)
+    }
 }

@@ -116,6 +116,10 @@ struct ActionConfirmationView: View {
             return "Caches are moved to the Trash and can be restored."
         }
 
+        if items.contains(where: { if case .trashLeftover = $0.action { return true }; return false }) {
+            return "Leftover app data is moved to the Trash. Empty the Trash to free the space."
+        }
+
         return "Review caution items before applying."
     }
 

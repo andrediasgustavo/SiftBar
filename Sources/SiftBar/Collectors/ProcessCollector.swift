@@ -15,6 +15,19 @@ struct ProcessCollector: Collector {
         var name: String {
             (command as NSString).lastPathComponent
         }
+
+        /// Name of the enclosing `.app` bundle, when the executable lives in
+        /// one. Grouping by bundle keeps every Chrome/Electron helper under the
+        /// app the user recognizes instead of listing a dozen processes.
+        var appBundleName: String? {
+            guard let marker = command.range(of: ".app/") else { return nil }
+            let bundlePath = command[..<marker.lowerBound]
+            return bundlePath.split(separator: "/").last.map(String.init)
+        }
+
+        var groupName: String {
+            appBundleName ?? name
+        }
     }
 
     /// Processes sharing an executable name are shown as one row to avoid
@@ -32,7 +45,7 @@ struct ProcessCollector: Collector {
         }
 
         var risk: Risk {
-            if isProtected { return .dangerous }
+            if isProtected { return .safe }
             return ProcessCollector.risk(for: bytes)
         }
 
@@ -46,7 +59,7 @@ struct ProcessCollector: Collector {
         guard let result = try? await CommandRunner.run(
             "/bin/ps",
             arguments: ["-Ao", "pid=,user=,rss=,comm="],
-            timeout: 10
+            timeout: 20
         ), result.exitCode == 0 else { return [] }
 
         return Self.items(from: Self.parse(result.stdout))
@@ -82,22 +95,20 @@ struct ProcessCollector: Collector {
             ScanItem(
                 category: .processes,
                 title: "\(entries.count) processes running",
-                detail: "Only processes above 150 MB are listed below. Processes sharing an executable are grouped and sorted by total resident memory.",
+                detail: "Apps whose processes total at least 150 MB are listed below. Helpers are grouped under the app, sorted by total resident memory.",
                 impactLabel: "\(entries.count) processes",
                 impactBytes: nil,
                 risk: .safe,
                 action: .none,
-                evidence: "ps -Ao pid,user,rss,comm"
+                evidence: "ps -Ao pid,user,rss,comm",
+                isInformational: true
             )
         ]
 
-        let heavy = entries
+        let grouped = groups(from: entries)
             .filter { $0.bytes >= minimumBytes }
             .sorted { $0.bytes > $1.bytes }
             .prefix(limit)
-
-        let grouped = groups(from: Array(heavy))
-            .sorted { $0.bytes > $1.bytes }
 
         for group in grouped {
             items.append(item(for: group))
@@ -111,11 +122,12 @@ struct ProcessCollector: Collector {
         var indexByName: [String: Int] = [:]
 
         for entry in entries {
-            if let index = indexByName[entry.name] {
+            let key = entry.groupName
+            if let index = indexByName[key] {
                 groups[index].entries.append(entry)
             } else {
-                indexByName[entry.name] = groups.count
-                groups.append(Group(name: entry.name, entries: [entry]))
+                indexByName[key] = groups.count
+                groups.append(Group(name: key, entries: [entry]))
             }
         }
 
@@ -137,9 +149,11 @@ struct ProcessCollector: Collector {
                 ? .none
                 : .killProcess(pid: entry.pid, name: entry.name)
         } else {
-            detail = "\(count) processes · \(group.userLabel) · \(format(group.bytes)) resident. Expand to quit individual processes.\(protectedSuffix)"
-            // The group itself is not actionable; each child carries one PID.
-            action = .none
+            let primary = group.entries.max { $0.bytes < $1.bytes }
+            detail = "\(count) processes · \(group.userLabel) · \(format(group.bytes)) resident. SiftBar quits the main process; helpers usually exit with it. Expand to quit an individual process.\(protectedSuffix)"
+            action = group.isProtected || primary == nil
+                ? .none
+                : .killProcess(pid: primary!.pid, name: group.name)
         }
 
         let children = count > 1
@@ -155,6 +169,8 @@ struct ProcessCollector: Collector {
             risk: group.risk,
             action: action,
             evidence: "ps -Ao pid,user,rss,comm",
+            isInformational: group.isProtected,
+            isProtected: group.isProtected,
             children: children
         )
     }
@@ -171,9 +187,11 @@ struct ProcessCollector: Collector {
             detail: "PID \(entry.pid) · \(entry.user) · \(format(entry.bytes)) resident.\(protectedSuffix)",
             impactLabel: format(entry.bytes),
             impactBytes: entry.bytes,
-            risk: protected ? .dangerous : risk(for: entry.bytes),
+            risk: protected ? .safe : risk(for: entry.bytes),
             action: protected ? .none : .killProcess(pid: entry.pid, name: entry.name),
-            evidence: "ps -Ao pid,user,rss,comm"
+            evidence: "ps -Ao pid,user,rss,comm",
+            isInformational: protected,
+            isProtected: protected
         )
     }
 

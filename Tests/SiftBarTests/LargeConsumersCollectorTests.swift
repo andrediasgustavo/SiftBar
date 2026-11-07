@@ -9,11 +9,17 @@ final class LargeConsumersCollectorTests: XCTestCase {
         XCTAssertEqual(roots, [
             "/Users/tester/Downloads",
             "/Users/tester/Desktop",
-            "/Users/tester/Documents",
-            "/Users/tester/Movies",
-            "/Users/tester/Pictures",
-            "/Users/tester/Music"
+            "/Users/tester/Documents"
         ])
+    }
+
+    func testRootsAreSkippedWithoutProtectedFolderAccess() {
+        XCTAssertTrue(
+            LargeConsumersCollector.roots(
+                home: "/Users/tester",
+                includeProtected: false
+            ).isEmpty
+        )
     }
 
     func testItemsAreSortedBySizeAndLimited() {

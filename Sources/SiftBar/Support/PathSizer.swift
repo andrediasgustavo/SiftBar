@@ -39,6 +39,51 @@ enum PathSizer {
         return all.filter { seen.insert($0.path).inserted }
     }
 
+    /// Sum of the immediate children of a directory, skipping names that would
+    /// trigger sensitive permission prompts (for example a Photos container).
+    static func sizesOfChildren(
+        of path: String,
+        excludingNames: Set<String> = [],
+        timeout: TimeInterval = 20
+    ) async -> Int64 {
+        guard let entries = try? FileManager.default.contentsOfDirectory(atPath: path) else {
+            return 0
+        }
+
+        let allowed = entries
+            .filter { !$0.hasPrefix(".") }
+            .filter { !excludingNames.contains($0.lowercased()) }
+            .map { "\(path)/\($0)" }
+
+        return await withTaskGroup(of: Int64.self) { group in
+            for child in allowed {
+                group.addTask {
+                    await sizeInBytes(of: child, timeout: timeout) ?? 0
+                }
+            }
+
+            var total: Int64 = 0
+            for await size in group {
+                total += size
+            }
+            return total
+        }
+    }
+
+    /// Sizes of the immediate child directories of a directory, without the
+    /// extra `find` pass used by `childSizes`. Used by the space-map collector,
+    /// where only directory totals are needed and process load matters.
+    static func childDirectorySizes(of path: String, timeout: TimeInterval = 15) async -> [ChildSize] {
+        guard FileManager.default.fileExists(atPath: path) else { return [] }
+        guard let result = try? await CommandRunner.run(
+            "/usr/bin/du",
+            arguments: ["-d", "1", "-k", path],
+            timeout: timeout
+        ) else { return [] }
+
+        return parseChildSizes(result.stdout, root: path)
+    }
+
     private static func directorySizes(of path: String, timeout: TimeInterval) async -> [ChildSize] {
         guard let result = try? await CommandRunner.run(
             "/usr/bin/du",

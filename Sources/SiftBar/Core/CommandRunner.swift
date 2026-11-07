@@ -22,6 +22,10 @@ enum CommandError: Error, LocalizedError {
 
 enum CommandRunner {
     /// Runs an executable without a shell, so arguments cannot be injected.
+    ///
+    /// Output is drained while the process runs. Reading only in the
+    /// termination handler deadlocks as soon as a command writes more than the
+    /// pipe buffer (about 64 KB), which is common for `ps` listings.
     static func run(
         _ executable: String,
         arguments: [String] = [],
@@ -38,31 +42,15 @@ enum CommandRunner {
             process.standardError = stderrPipe
 
             let resumeGuard = ResumeGuard()
+            let timeoutFlag = TimeoutFlag()
 
             let timeoutItem = DispatchWorkItem {
                 guard process.isRunning else { return }
+                timeoutFlag.markTimedOut()
                 process.terminate()
-                resumeGuard.perform {
-                    continuation.resume(throwing: CommandError.timedOut(timeout))
-                }
             }
             DispatchQueue.global(qos: .userInitiated)
                 .asyncAfter(deadline: .now() + timeout, execute: timeoutItem)
-
-            process.terminationHandler = { finished in
-                timeoutItem.cancel()
-
-                let stdout = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-                let stderr = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-
-                resumeGuard.perform {
-                    continuation.resume(returning: CommandResult(
-                        stdout: String(data: stdout, encoding: .utf8) ?? "",
-                        stderr: String(data: stderr, encoding: .utf8) ?? "",
-                        exitCode: finished.terminationStatus
-                    ))
-                }
-            }
 
             do {
                 try process.run()
@@ -70,6 +58,31 @@ enum CommandRunner {
                 timeoutItem.cancel()
                 resumeGuard.perform {
                     continuation.resume(throwing: CommandError.launchFailed(error.localizedDescription))
+                }
+                return
+            }
+
+            // Drain both pipes before waiting for the process. This prevents
+            // the child from blocking on a full pipe buffer.
+            DispatchQueue.global(qos: .userInitiated).async {
+                let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+                let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+                timeoutItem.cancel()
+
+                if timeoutFlag.didTimeOut {
+                    resumeGuard.perform {
+                        continuation.resume(throwing: CommandError.timedOut(timeout))
+                    }
+                    return
+                }
+
+                resumeGuard.perform {
+                    continuation.resume(returning: CommandResult(
+                        stdout: String(data: stdoutData, encoding: .utf8) ?? "",
+                        stderr: String(data: stderrData, encoding: .utf8) ?? "",
+                        exitCode: process.terminationStatus
+                    ))
                 }
             }
         }
@@ -87,5 +100,22 @@ private final class ResumeGuard: @unchecked Sendable {
         guard !didResume else { return }
         didResume = true
         body()
+    }
+}
+
+private final class TimeoutFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var timedOut = false
+
+    var didTimeOut: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return timedOut
+    }
+
+    func markTimedOut() {
+        lock.lock()
+        defer { lock.unlock() }
+        timedOut = true
     }
 }

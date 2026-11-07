@@ -68,8 +68,10 @@ final class ProcessCollectorTests: XCTestCase {
         XCTAssertEqual(items[2].risk, .caution)
 
         XCTAssertEqual(items[3].title, "foo")
-        XCTAssertEqual(items[3].risk, .dangerous)
+        XCTAssertEqual(items[3].risk, .safe)
         XCTAssertEqual(items[3].action, .none)
+        XCTAssertTrue(items[3].isProtected)
+        XCTAssertTrue(items[3].isInformational)
         XCTAssertTrue(items[3].detail.contains("never terminate"))
     }
 
@@ -121,8 +123,10 @@ final class ProcessCollectorTests: XCTestCase {
         XCTAssertEqual(pid, 101)
 
         let protected = try XCTUnwrap(parent.children.first { $0.detail.contains("root") })
-        XCTAssertEqual(protected.risk, .dangerous)
+        XCTAssertEqual(protected.risk, .safe)
         XCTAssertEqual(protected.action, .none)
+        XCTAssertTrue(protected.isProtected)
+        XCTAssertTrue(protected.isInformational)
     }
 
     func testItemsRespectTheDisplayLimit() {
@@ -164,7 +168,7 @@ final class ProcessCollectorTests: XCTestCase {
         XCTAssertEqual(items[0].impactLabel, "0 processes")
     }
 
-    func testProtectedProcessIsDangerousAndNotKillable() {
+    func testProtectedProcessIsInformationalAndNotKillable() {
         let entries = [
             ProcessCollector.Entry(
                 pid: 42,
@@ -178,12 +182,14 @@ final class ProcessCollectorTests: XCTestCase {
 
         XCTAssertEqual(items.count, 2)
         XCTAssertEqual(items[1].title, "important-daemon")
-        XCTAssertEqual(items[1].risk, .dangerous)
+        XCTAssertEqual(items[1].risk, .safe)
         XCTAssertEqual(items[1].action, .none)
+        XCTAssertTrue(items[1].isProtected)
+        XCTAssertTrue(items[1].isInformational)
         XCTAssertTrue(items[1].detail.contains("never terminate"))
     }
 
-    func testKnownCriticalProcessIsDangerousEvenForTheCurrentUser() {
+    func testKnownCriticalProcessIsProtectedEvenForTheCurrentUser() {
         let entries = [
             ProcessCollector.Entry(
                 pid: 77,
@@ -195,11 +201,13 @@ final class ProcessCollectorTests: XCTestCase {
 
         let items = ProcessCollector.items(from: entries)
 
-        XCTAssertEqual(items[1].risk, .dangerous)
+        XCTAssertEqual(items[1].risk, .safe)
         XCTAssertEqual(items[1].action, .none)
+        XCTAssertTrue(items[1].isProtected)
+        XCTAssertTrue(items[1].isInformational)
     }
 
-    func testGroupsAggregateProcessesWithTheSameExecutableName() {
+    func testGroupsAggregateProcessesFromTheSameAppBundle() {
         let entries = [
             ProcessCollector.Entry(
                 pid: 10,
@@ -211,7 +219,7 @@ final class ProcessCollectorTests: XCTestCase {
                 pid: 11,
                 user: "andre",
                 bytes: 400 * 1024 * 1024,
-                command: "/Applications/App.app/Contents/MacOS/Helper"
+                command: "/Applications/App.app/Contents/MacOS/Another Helper"
             ),
             ProcessCollector.Entry(
                 pid: 12,
@@ -224,11 +232,42 @@ final class ProcessCollectorTests: XCTestCase {
         let items = ProcessCollector.items(from: entries)
 
         XCTAssertEqual(items.count, 3)
-        XCTAssertEqual(items[1].title, "Helper")
+        XCTAssertEqual(items[1].title, "App")
         XCTAssertEqual(items[1].impactBytes, 700 * 1024 * 1024)
-        XCTAssertEqual(items[1].action, .none)
+        XCTAssertEqual(items[1].action, .killProcess(pid: 11, name: "App"))
         XCTAssertTrue(items[1].detail.contains("2 processes"))
+        XCTAssertTrue(items[1].detail.contains("main process"))
         XCTAssertEqual(items[2].title, "Other")
+    }
+
+    func testAppWithManySmallHelpersIsStillListed() {
+        let entries = [
+            ProcessCollector.Entry(
+                pid: 20,
+                user: "andre",
+                bytes: 80 * 1024 * 1024,
+                command: "/Applications/Chrome.app/Contents/MacOS/Chrome"
+            ),
+            ProcessCollector.Entry(
+                pid: 21,
+                user: "andre",
+                bytes: 70 * 1024 * 1024,
+                command: "/Applications/Chrome.app/Contents/Frameworks/Helper.app/Contents/MacOS/Helper"
+            ),
+            ProcessCollector.Entry(
+                pid: 22,
+                user: "andre",
+                bytes: 60 * 1024 * 1024,
+                command: "/Applications/Chrome.app/Contents/Frameworks/Helper.app/Contents/MacOS/Helper"
+            )
+        ]
+
+        let items = ProcessCollector.items(from: entries)
+
+        XCTAssertEqual(items.count, 2)
+        XCTAssertEqual(items[1].title, "Chrome")
+        XCTAssertEqual(items[1].impactBytes, 210 * 1024 * 1024)
+        XCTAssertEqual(items[1].children.count, 3)
     }
 
     func testGroupsFromEntriesPreserveInputOrder() {
@@ -245,7 +284,7 @@ final class ProcessCollectorTests: XCTestCase {
         XCTAssertEqual(groups[0].bytes, 40)
     }
 
-    func testGroupOfProtectedProcessesIsDangerous() {
+    func testGroupOfProtectedProcessesIsProtected() {
         let entries = [
             ProcessCollector.Entry(pid: 21, user: "root", bytes: 200 * 1024 * 1024, command: "/usr/libexec/daemon"),
             ProcessCollector.Entry(pid: 22, user: "root", bytes: 200 * 1024 * 1024, command: "/usr/libexec/daemon")
@@ -255,7 +294,17 @@ final class ProcessCollectorTests: XCTestCase {
 
         XCTAssertEqual(items.count, 2)
         XCTAssertEqual(items[1].title, "daemon")
-        XCTAssertEqual(items[1].risk, .dangerous)
+        XCTAssertEqual(items[1].risk, .safe)
         XCTAssertEqual(items[1].action, .none)
+        XCTAssertTrue(items[1].isProtected)
+        XCTAssertTrue(items[1].isInformational)
+    }
+
+    func testCollectReturnsARealProcessListWithoutPipeDeadlock() async {
+        let items = await ProcessCollector().collect()
+
+        XCTAssertFalse(items.isEmpty)
+        XCTAssertEqual(items[0].category, .processes)
+        XCTAssertTrue(items[0].title.hasSuffix("processes running"))
     }
 }

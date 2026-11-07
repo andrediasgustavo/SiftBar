@@ -5,10 +5,15 @@ import Foundation
 /// consumers so the user can review them in Finder and decide.
 struct LargeConsumersCollector: Collector {
     let category: ItemCategory = .disk
+    private let includeProtectedFolders: Bool
 
     static let minimumBytes: Int64 = 1_000_000_000
     static let limit = 12
-    static let directoryNames = ["Downloads", "Desktop", "Documents", "Movies", "Pictures", "Music"]
+    static let directoryNames = ["Downloads", "Desktop", "Documents"]
+
+    init(includeProtectedFolders: Bool = true) {
+        self.includeProtectedFolders = includeProtectedFolders
+    }
 
     struct Entry: Sendable, Equatable {
         let path: String
@@ -19,7 +24,7 @@ struct LargeConsumersCollector: Collector {
 
     func collect() async -> [ScanItem] {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let roots = Self.roots(home: home)
+        let roots = Self.roots(home: home, includeProtected: includeProtectedFolders)
             .filter { FileManager.default.fileExists(atPath: $0) }
 
         return await collect(roots: roots, home: home)
@@ -69,8 +74,9 @@ struct LargeConsumersCollector: Collector {
 
     /// Only the folders people actually browse for space. Library, system
     /// paths, and caches are handled by their own collectors.
-    static func roots(home: String) -> [String] {
-        directoryNames.map { "\(home)/\($0)" }
+    static func roots(home: String, includeProtected: Bool = true) -> [String] {
+        guard includeProtected else { return [] }
+        return directoryNames.map { "\(home)/\($0)" }
     }
 
     static func items(

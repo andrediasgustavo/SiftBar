@@ -15,17 +15,21 @@ struct DiskCollector: Collector {
     static func item(for disk: DiskStats) -> ScanItem? {
         guard disk.totalBytes > 0 else { return nil }
 
-        let usedRatio = Double(disk.usedBytes) / Double(disk.totalBytes)
+        let risk = risk(forUsedRatio: disk.usedRatio)
+        let purgeable = disk.purgeableBytes > 0
+            ? " macOS can also reclaim \(format(disk.purgeableBytes)) of purgeable space on demand."
+            : ""
 
         return ScanItem(
             category: .disk,
             title: "Startup disk",
-            detail: "\(format(disk.usedBytes)) used of \(format(disk.totalBytes)). Free space is reported by APFS and includes purgeable space.",
-            impactLabel: "\(format(disk.freeBytes)) free",
-            impactBytes: disk.freeBytes,
-            risk: risk(forUsedRatio: usedRatio),
+            detail: "\(format(disk.usedBytes)) used of \(format(disk.totalBytes)). \(format(disk.importantFreeBytes)) available, matching System Settings.\(purgeable)",
+            impactLabel: "\(format(disk.importantFreeBytes)) available",
+            impactBytes: disk.importantFreeBytes,
+            risk: risk,
             action: .none,
-            evidence: "df -k /System/Volumes/Data"
+            evidence: "df -k /System/Volumes/Data + volumeAvailableCapacityForImportantUsage",
+            isInformational: risk == .safe
         )
     }
 

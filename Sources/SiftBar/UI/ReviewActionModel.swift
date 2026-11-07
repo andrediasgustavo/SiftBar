@@ -104,6 +104,14 @@ final class ReviewActionModel: ObservableObject {
         reports.filter(\.success).reduce(0) { $0 + $1.reclaimedBytes }
     }
 
+    var diskMovedBytes: Int64 {
+        reports.filter { $0.success && $0.movedToTrash }.reduce(0) { $0 + $1.reclaimedBytes }
+    }
+
+    var memoryReleasedBytes: Int64 {
+        reports.filter { $0.success && $0.domain == .memory }.reduce(0) { $0 + $1.reclaimedBytes }
+    }
+
     var allSucceeded: Bool {
         !reports.isEmpty && reports.allSatisfy(\.success)
     }

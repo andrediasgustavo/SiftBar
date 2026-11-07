@@ -164,6 +164,100 @@ final class ModelTests: XCTestCase {
             ItemAction.deletePath(path: "/tmp", bytes: 10),
             .deletePath(path: "/tmp", bytes: 10)
         )
+        XCTAssertEqual(
+            ItemAction.trashLeftover(path: "/tmp", bytes: 10),
+            .trashLeftover(path: "/tmp", bytes: 10)
+        )
         XCTAssertNotEqual(ItemAction.stopService(name: "redis"), .stopService(name: "nginx"))
+    }
+
+    func testReclaimDomainSeparatesDiskFromMemory() {
+        let cache = ScanItem(
+            category: .caches,
+            title: "Cache",
+            detail: "",
+            impactLabel: "",
+            impactBytes: 1,
+            risk: .safe,
+            action: .deletePath(path: "/tmp/cache", bytes: 1),
+            evidence: ""
+        )
+        let leftover = ScanItem(
+            category: .leftovers,
+            title: "Leftover",
+            detail: "",
+            impactLabel: "",
+            impactBytes: 1,
+            risk: .caution,
+            action: .trashLeftover(path: "/tmp/leftover", bytes: 1),
+            evidence: ""
+        )
+        let process = ScanItem(
+            category: .processes,
+            title: "App",
+            detail: "",
+            impactLabel: "",
+            impactBytes: 1,
+            risk: .safe,
+            action: .killProcess(pid: 42, name: "App"),
+            evidence: ""
+        )
+
+        XCTAssertEqual(cache.reclaimDomain, .disk)
+        XCTAssertEqual(leftover.reclaimDomain, .disk)
+        XCTAssertEqual(process.reclaimDomain, .memory)
+    }
+
+    func testScanItemsDefaultToFindingsRatherThanInformationalRows() {
+        let item = ScanItem(
+            category: .disk,
+            title: "Row",
+            detail: "",
+            impactLabel: "",
+            impactBytes: nil,
+            risk: .safe,
+            action: .none,
+            evidence: ""
+        )
+
+        XCTAssertFalse(item.isInformational)
+        XCTAssertFalse(item.isProtected)
+        XCTAssertFalse(item.isBreakdown)
+    }
+
+    func testMemoryStatsBreakdownDefaultsToZero() {
+        let memory = MemoryStats(
+            totalBytes: 100,
+            usedBytes: 60,
+            swapUsedBytes: 10,
+            pressure: .normal
+        )
+
+        XCTAssertFalse(memory.hasBreakdown)
+        XCTAssertEqual(memory.appBytes, 0)
+        XCTAssertEqual(memory.cachedBytes, 0)
+        XCTAssertEqual(memory.usedRatio, 0.6, accuracy: 0.0001)
+    }
+
+    func testDiskStatsUsesImportantCapacityWhenAvailable() {
+        let disk = DiskStats(
+            totalBytes: 100,
+            usedBytes: 60,
+            freeBytes: 38,
+            dataVolumeUsedBytes: 50,
+            availableForImportantUsageBytes: 40,
+            purgeableBytes: 2
+        )
+
+        XCTAssertEqual(disk.importantFreeBytes, 40)
+        XCTAssertEqual(disk.usedRatio, 0.6, accuracy: 0.0001)
+        XCTAssertTrue(disk.hasContainerBreakdown)
+    }
+
+    func testDiskStatsFallsBackToStrictFreeSpace() {
+        let disk = DiskStats(totalBytes: 100, usedBytes: 60, freeBytes: 40)
+
+        XCTAssertEqual(disk.importantFreeBytes, 40)
+        XCTAssertFalse(disk.hasContainerBreakdown)
     }
 }

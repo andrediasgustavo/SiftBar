@@ -39,3 +39,7 @@ coverage/
 
 # Local agent tooling
 .opencode/
+
+# Python bytecode
+__pycache__/
+*.pyc

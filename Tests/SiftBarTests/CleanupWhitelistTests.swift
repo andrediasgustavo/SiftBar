@@ -73,4 +73,54 @@ final class CleanupWhitelistTests: XCTestCase {
             roots: [root.path]
         ))
     }
+
+    // MARK: - Leftovers
+
+    func testAllowsTopLevelApplicationSupportFolder() throws {
+        let home = try makeHome()
+        let folder = home
+            .appendingPathComponent("Library/Application Support/LeftoverApp", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+
+        XCTAssertTrue(CleanupWhitelist.allowsLeftover(folder.path, home: home.path))
+    }
+
+    func testRejectsNestedApplicationSupportFolder() throws {
+        let home = try makeHome()
+        let folder = home
+            .appendingPathComponent("Library/Application Support/LeftoverApp/nested", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+
+        XCTAssertFalse(CleanupWhitelist.allowsLeftover(folder.path, home: home.path))
+    }
+
+    func testRejectsHiddenAndAppleFolders() throws {
+        let home = try makeHome()
+        let hidden = home.appendingPathComponent("Library/Application Support/.hidden", isDirectory: true)
+        let apple = home.appendingPathComponent("Library/Application Support/com.apple.foo", isDirectory: true)
+        try FileManager.default.createDirectory(at: hidden, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: apple, withIntermediateDirectories: true)
+
+        XCTAssertFalse(CleanupWhitelist.allowsLeftover(hidden.path, home: home.path))
+        XCTAssertFalse(CleanupWhitelist.allowsLeftover(apple.path, home: home.path))
+    }
+
+    func testRejectsPathsOutsideApplicationSupport() throws {
+        let home = try makeHome()
+        let outside = home.appendingPathComponent("Documents/Important", isDirectory: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+
+        XCTAssertFalse(CleanupWhitelist.allowsLeftover(outside.path, home: home.path))
+        XCTAssertFalse(CleanupWhitelist.allowsLeftover("/Library/Application Support/Foo", home: home.path))
+    }
+
+    private func makeHome() throws -> URL {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SiftBarTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: home)
+        }
+        return home
+    }
 }

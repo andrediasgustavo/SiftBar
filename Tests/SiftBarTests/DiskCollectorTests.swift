@@ -32,8 +32,9 @@ final class DiskCollectorTests: XCTestCase {
         XCTAssertEqual(item.impactBytes, 15_000)
         XCTAssertEqual(item.risk, .caution)
         XCTAssertEqual(item.action, .none)
-        XCTAssertEqual(item.evidence, "df -k /System/Volumes/Data")
+        XCTAssertEqual(item.evidence, "df -k /System/Volumes/Data + volumeAvailableCapacityForImportantUsage")
         XCTAssertTrue(item.detail.contains("used of"))
+        XCTAssertFalse(item.isInformational)
     }
 
     func testFullDiskIsDangerous() throws {
@@ -42,6 +43,32 @@ final class DiskCollectorTests: XCTestCase {
         let item = try XCTUnwrap(DiskCollector.item(for: disk))
 
         XCTAssertEqual(item.risk, .dangerous)
+    }
+
+    func testHealthyDiskRowIsInformational() throws {
+        let disk = DiskStats(totalBytes: 100, usedBytes: 40, freeBytes: 60)
+
+        let item = try XCTUnwrap(DiskCollector.item(for: disk))
+
+        XCTAssertEqual(item.risk, .safe)
+        XCTAssertTrue(item.isInformational)
+    }
+
+    func testAvailableCapacityMatchesSystemSettingsWhenPresent() throws {
+        let disk = DiskStats(
+            totalBytes: 100_000,
+            usedBytes: 60_000,
+            freeBytes: 38_000,
+            dataVolumeUsedBytes: 55_000,
+            availableForImportantUsageBytes: 40_000,
+            purgeableBytes: 2_000
+        )
+
+        let item = try XCTUnwrap(DiskCollector.item(for: disk))
+
+        XCTAssertEqual(item.impactBytes, 40_000)
+        XCTAssertEqual(disk.importantFreeBytes, 40_000)
+        XCTAssertTrue(item.detail.contains("2,000 bytes") || item.detail.contains("2 KB") || item.detail.contains("purgeable"))
     }
 
     func testCollectReturnsOneItemForValidDisk() async {

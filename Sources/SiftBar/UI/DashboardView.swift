@@ -10,6 +10,7 @@ struct DashboardView: View {
     @StateObject private var expanded = ExpansionModel()
     @StateObject private var history = HistoryPanelModel()
     @StateObject private var searchFocus = SearchFocusModel()
+    @AppStorage("SiftBar.diskMapExpanded") private var diskMapExpanded = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -51,6 +52,12 @@ struct DashboardView: View {
                 history.isPresented = false
             }
         }
+        .sheet(isPresented: $appState.isAccessSheetPresented) {
+            AccessOnboardingView(state: appState)
+        }
+        .onAppear {
+            appState.presentAccessSheetIfNeeded()
+        }
         .onChange(of: page.category) { _ in
             actions.clear()
             expanded.clear()
@@ -69,7 +76,7 @@ struct DashboardView: View {
         VStack(spacing: 0) {
             List(selection: $page.selection) {
                 Label("Overview", systemImage: "square.grid.2x2")
-                    .badge(badge(allItems.count))
+                    .badge(badge(allMetrics.findings))
                     .tag(ReviewPage.overview)
                     .contentShape(Rectangle())
                     .onTapGesture { page.selection = .overview }
@@ -123,6 +130,18 @@ struct DashboardView: View {
                 statStrip
                     .padding(.horizontal, 24)
                     .padding(.top, 14)
+            }
+
+            if let report = appState.report, page.category == .memory {
+                memoryCard(report)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 12)
+            }
+
+            if let report = appState.report, page.category == .disk {
+                diskCard(report)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 12)
             }
 
             if !actions.reports.isEmpty {
@@ -185,7 +204,7 @@ struct DashboardView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if appState.isScanning || appState.errorMessage != nil {
+            if appState.isScanning || appState.errorMessage != nil || appState.lastDuration != nil {
                 HStack(spacing: 5) {
                     if appState.isScanning {
                         ProgressView()
@@ -242,6 +261,22 @@ struct DashboardView: View {
 
             if items.isEmpty {
                 noResultsState
+            } else if page.category == .disk, items.contains(where: { $0.canBeChanged }) {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Clean up")
+                            .font(.headline)
+
+                        Spacer(minLength: 8)
+
+                        Text("Select changeable items; large files can be reviewed in Finder.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.bottom, 6)
+
+                    itemList(items)
+                }
             } else {
                 itemList(items)
             }
@@ -266,7 +301,7 @@ struct DashboardView: View {
 
     @ViewBuilder
     private func rows(_ items: [ScanItem]) -> some View {
-        let showsCategory = page.category == nil
+        let showsCategory = page.category == nil || page.category == .disk
         let display = displayRows(items)
 
         ForEach(Array(display.enumerated()), id: \.element.id) { index, row in
@@ -279,12 +314,14 @@ struct DashboardView: View {
                 hasChildren: !row.item.children.isEmpty,
                 isExpanded: expanded.contains(row.item.id),
                 onToggleExpanded: { expanded.toggle(row.item.id) },
-                onToggle: { actions.toggle(row.item) }
+                onToggle: { actions.toggle(row.item) },
+                quickActionTitle: quickActionTitle(for: row.item, isChild: row.isChild),
+                onQuickAction: { performQuickAction(for: row.item, isChild: row.isChild) }
             )
 
             if index < display.count - 1 {
                 Hairline()
-                    .padding(.leading, row.isChild ? 134 : (showsCategory ? 130 : 108))
+                    .padding(.leading, row.isChild ? 148 : (showsCategory ? 144 : 122))
             }
         }
     }
@@ -302,11 +339,49 @@ struct DashboardView: View {
     }
 
     private func flattened(_ items: [ScanItem]) -> [ScanItem] {
-        items.flatMap { [$0] + $0.children }
+        items.flatMap { item in
+            guard expanded.contains(item.id) else { return [item] }
+            return [item] + item.children
+        }
+    }
+
+    private func quickActionTitle(for item: ScanItem, isChild: Bool) -> String? {
+        guard !isChild else { return nil }
+        if item.isProtected { return "Activity Monitor" }
+        if item.category == .disk && item.risk != .safe { return "Review caches" }
+        if item.category == .memory && item.risk != .safe { return "Open Processes" }
+        guard item.canBeChanged else { return nil }
+
+        switch item.action {
+        case .killProcess:
+            return "Quit"
+        case .trashLeftover:
+            return "Review"
+        default:
+            return nil
+        }
+    }
+
+    private func performQuickAction(for item: ScanItem, isChild: Bool) {
+        guard !isChild else { return }
+
+        if item.isProtected {
+            ActivityMonitor.open()
+        } else if item.category == .disk && item.risk != .safe {
+            page.selection = .category(.caches)
+        } else if item.category == .memory && item.risk != .safe {
+            page.selection = .category(.processes)
+        } else {
+            actions.beginConfirmation(with: [item])
+        }
     }
 
     private func sortedForReview(_ items: [ScanItem]) -> [ScanItem] {
         items.sorted { lhs, rhs in
+            if lhs.isProtected != rhs.isProtected {
+                return !lhs.isProtected
+            }
+
             if lhs.risk.sortRank != rhs.risk.sortRank {
                 return lhs.risk.sortRank < rhs.risk.sortRank
             }
@@ -381,64 +456,520 @@ struct DashboardView: View {
         .accessibilityElement(children: .contain)
     }
 
+    // MARK: - Domain cards
+
+    private static let breakdownColors: [Color] = [
+        Color(nsColor: .systemBlue),
+        Color(nsColor: .systemOrange),
+        Color(nsColor: .systemPurple),
+        Color(nsColor: .systemTeal),
+        Color(nsColor: .systemPink),
+        Color(nsColor: .systemIndigo),
+        Color(nsColor: .systemYellow),
+        Color(nsColor: .systemGray)
+    ]
+
+    private func memoryCard(_ report: ScanReport) -> some View {
+        let memory = report.memory
+        let used = memory.hasBreakdown
+            ? min(memory.appBytes + memory.wiredBytes + memory.compressedBytes, memory.totalBytes)
+            : memory.usedBytes
+        let remaining = memory.totalBytes > used ? memory.totalBytes - used : 0
+        let free = min(memory.freeBytes, remaining)
+        let other = remaining - free
+
+        var segments: [BreakdownSegment] = []
+        if memory.hasBreakdown {
+            segments = [
+                BreakdownSegment(name: "App", bytes: Int64(memory.appBytes), color: Self.breakdownColors[0], memoryUnits: true),
+                BreakdownSegment(name: "Wired", bytes: Int64(memory.wiredBytes), color: Self.breakdownColors[1], memoryUnits: true),
+                BreakdownSegment(name: "Compressed", bytes: Int64(memory.compressedBytes), color: Self.breakdownColors[2], memoryUnits: true),
+                BreakdownSegment(name: "Cached & other", bytes: Int64(other), color: Self.breakdownColors[7], memoryUnits: true)
+            ]
+        } else {
+            segments = [
+                BreakdownSegment(name: "Used", bytes: Int64(used), color: Self.breakdownColors[0], memoryUnits: true)
+            ]
+        }
+        segments.append(BreakdownSegment(
+            name: "Free",
+            bytes: Int64(free),
+            color: Color(nsColor: .systemGreen).opacity(0.65),
+            memoryUnits: true
+        ))
+
+        return VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text("Memory breakdown")
+                    .font(.headline)
+
+                Spacer(minLength: 8)
+
+                Text(memory.pressure.label)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(memoryTint(memory))
+
+                Text("\(formatMemory(memory.totalBytes)) total")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if memory.swapUsedBytes > 0 {
+                    Text("· swap \(formatMemory(memory.swapUsedBytes))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            BreakdownBar(segments: segments, total: Int64(memory.totalBytes))
+
+            HStack(spacing: 14) {
+                ForEach(segments) { segment in
+                    BreakdownLegend(segment: segment)
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            if !memory.hasBreakdown {
+                Text("Detailed memory counters were unavailable in this scan. Run Analyze again to refresh them.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(14)
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1)
+        )
+    }
+
+    private func diskCard(_ report: ScanReport) -> some View {
+        let disk = report.disk
+        let free = max(0, disk.totalBytes - disk.usedBytes)
+        let usedColor: Color
+        if disk.usedRatio >= 0.90 {
+            usedColor = .red
+        } else if disk.usedRatio >= 0.80 {
+            usedColor = .orange
+        } else {
+            usedColor = Self.breakdownColors[0]
+        }
+        let segments = [
+            BreakdownSegment(name: "Used", bytes: disk.usedBytes, color: usedColor),
+            BreakdownSegment(name: "Available", bytes: free, color: Color(nsColor: .systemGreen).opacity(0.65))
+        ]
+        let breakdown = report.items
+            .filter(\.isBreakdown)
+            .sorted { ($0.impactBytes ?? 0) > ($1.impactBytes ?? 0) }
+        let metrics = ReviewMetrics.make(visible: [], all: report.items)
+
+        return VStack(alignment: .leading, spacing: 10) {
+            if !appState.includesProtectedFolders {
+                HStack(spacing: 6) {
+                    Image(systemName: "info.circle")
+                        .foregroundStyle(.orange)
+
+                    Text("Partial disk map — Desktop, Documents and Downloads are not measured.")
+                        .foregroundStyle(.secondary)
+
+                    Spacer(minLength: 8)
+
+                    Button("Complete access") {
+                        appState.presentAccessSheet()
+                    }
+                    .buttonStyle(.link)
+                }
+                .font(.caption)
+                .padding(8)
+                .background(.orange.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text("Where space goes")
+                    .font(.headline)
+
+                Spacer(minLength: 8)
+
+                Text("\(format(disk.usedBytes)) used of \(format(disk.totalBytes))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if disk.purgeableBytes > 0 {
+                    Text("· \(format(disk.purgeableBytes)) purgeable")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Button {
+                    diskMapExpanded.toggle()
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(diskMapExpanded ? "Hide details" : "Show details")
+                        Image(systemName: diskMapExpanded ? "chevron.up" : "chevron.down")
+                    }
+                    .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help(diskMapExpanded
+                      ? "Hide the space map and APFS volumes"
+                      : "Show the space map and APFS volumes")
+            }
+
+            BreakdownBar(segments: segments, total: disk.totalBytes)
+
+            HStack(spacing: 14) {
+                BreakdownLegend(segment: segments[0])
+                BreakdownLegend(segment: segments[1])
+                Spacer(minLength: 0)
+                if metrics.diskReclaimableBytes > 0 {
+                    Text("SiftBar can move \(format(metrics.diskReclaimableBytes)) to the Trash")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if diskMapExpanded {
+                if !breakdown.isEmpty {
+                    LazyVGrid(
+                        columns: [GridItem(.flexible(), spacing: 18), GridItem(.flexible(), spacing: 18)],
+                        alignment: .leading,
+                        spacing: 5
+                    ) {
+                        ForEach(Array(breakdown.prefix(8).enumerated()), id: \.element.id) { index, item in
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(Self.breakdownColors[index % Self.breakdownColors.count])
+                                    .frame(width: 6, height: 6)
+
+                                Text(item.title)
+                                    .font(.caption)
+                                    .lineLimit(1)
+
+                                Spacer(minLength: 4)
+
+                                Text(item.impactLabel)
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                            .help(item.detail)
+                        }
+                    }
+
+                    Text("Measured with du. System & other is the remainder that SiftBar does not scan. Protected folders may stay there until Full Disk Access is granted.")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+
+                if !disk.volumes.isEmpty {
+                    Divider()
+                        .padding(.vertical, 1)
+
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("APFS volumes")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+
+                        Spacer(minLength: 8)
+
+                        Text("System overhead is part of Used and cannot be cleaned by SiftBar.")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+
+                    LazyVGrid(
+                        columns: [
+                            GridItem(.flexible(), spacing: 18),
+                            GridItem(.flexible(), spacing: 18),
+                            GridItem(.flexible(), spacing: 18)
+                        ],
+                        alignment: .leading,
+                        spacing: 5
+                    ) {
+                        ForEach(Array(disk.volumes.enumerated()), id: \.element.id) { index, volume in
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(Self.breakdownColors[index % Self.breakdownColors.count])
+                                    .frame(width: 6, height: 6)
+
+                                Text(volume.name)
+                                    .font(.caption)
+                                    .lineLimit(1)
+
+                                Spacer(minLength: 4)
+
+                                Text(format(volume.bytes))
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                            .help("APFS volume \(volume.id) · roles: \(volume.roles.joined(separator: ", "))")
+                        }
+                    }
+
+                    Text("Volume totals can differ slightly from Used because APFS shares blocks and counts purgeable space separately.")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+
+            }
+        }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: diskMapExpanded)
+        .padding(14)
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1)
+        )
+    }
+
+    // MARK: - Stats
+
     private var stats: [Stat] {
         guard let report = appState.report else { return [] }
+        let metrics = ReviewMetrics.make(
+            visible: categoryItems(page.category, in: report.items),
+            all: report.items
+        )
 
-        let dangerous = report.items.filter { $0.risk == .dangerous }.count
-        let caution = report.items.filter { $0.risk == .caution }.count
-        let review = dangerous + caution
-        let reclaimable = report.items
-            .filter(\.canBeChanged)
-            .compactMap(\.impactBytes)
-            .reduce(0, +)
-
-        let reviewTint: Color = dangerous > 0 ? .red : (caution > 0 ? .orange : .green)
-        let memoryTint: Color
-        switch report.memory.pressure {
-        case .critical: memoryTint = .red
-        case .warning: memoryTint = .orange
-        case .normal: memoryTint = .primary
+        guard let category = page.category else {
+            return overviewStats(report, metrics)
         }
 
-        let usedRatio = Double(report.disk.usedBytes) / Double(max(report.disk.totalBytes, 1))
-        let diskTint: Color = usedRatio >= 0.90 ? .red : (usedRatio >= 0.80 ? .orange : .primary)
+        switch category {
+        case .disk:
+            return diskStats(report, metrics)
+        case .memory:
+            return memoryStats(report, metrics)
+        case .caches:
+            return reclaimStats(metrics)
+        case .leftovers:
+            return leftoverStats(metrics)
+        case .processes:
+            return processStats(metrics)
+        case .startup, .services:
+            return reviewStats(metrics)
+        }
+    }
 
-        let swap: String = report.memory.swapUsedBytes > 0
-            ? " · swap \(formatMemory(report.memory.swapUsedBytes))"
-            : " · no swap"
+    private func overviewStats(_ report: ScanReport, _ metrics: ReviewMetrics) -> [Stat] {
+        [
+            Stat(
+                value: "\(metrics.findings)",
+                label: "Findings",
+                tint: .primary,
+                help: "\(metrics.findings) actionable findings. \(metrics.informational) informational rows are not counted."
+            ),
+            Stat(
+                value: "\(metrics.needReview)",
+                label: "Need review",
+                tint: reviewTint(metrics),
+                help: "\(metrics.dangerous) dangerous · \(metrics.caution) caution"
+            ),
+            Stat(
+                value: format(metrics.diskReclaimableBytes),
+                label: "Disk reclaimable",
+                tint: metrics.diskReclaimableBytes > 0 ? .green : .secondary,
+                help: "Caches and reviewed leftovers that can be moved to the Trash. Memory is not included."
+            ),
+            Stat(
+                value: formatMemory(UInt64(max(metrics.memoryReleasableBytes, 0))),
+                label: "RAM if quit",
+                tint: metrics.memoryReleasableBytes > 0 ? .primary : .secondary,
+                help: "Memory that quitting the listed apps would release. This does not free disk space."
+            ),
+            Stat(
+                value: format(report.disk.importantFreeBytes),
+                label: "Disk available",
+                tint: diskTint(report.disk),
+                help: "\(format(report.disk.importantFreeBytes)) available, matching System Settings · \(Int(report.disk.usedRatio * 100))% used"
+            )
+        ]
+    }
+
+    private func diskStats(_ report: ScanReport, _ metrics: ReviewMetrics) -> [Stat] {
+        [
+            Stat(
+                value: format(report.disk.usedBytes),
+                label: "Used",
+                tint: diskTint(report.disk),
+                help: "Container-level used space. The Data volume alone uses \(format(report.disk.dataVolumeUsedBytes))."
+            ),
+            Stat(
+                value: format(report.disk.importantFreeBytes),
+                label: "Available",
+                tint: .primary,
+                help: "Includes \(format(report.disk.purgeableBytes)) of purgeable space, so it matches System Settings."
+            ),
+            Stat(
+                value: format(metrics.cacheReclaimableBytes),
+                label: "Caches",
+                tint: metrics.cacheReclaimableBytes > 0 ? .green : .secondary,
+                help: "Recreatable cache data SiftBar can move to the Trash. Empty the Trash to free it."
+            ),
+            Stat(
+                value: format(metrics.diskReclaimableBytes),
+                label: "Reclaimable",
+                tint: metrics.diskReclaimableBytes > 0 ? .green : .secondary,
+                help: "Caches plus reviewed leftovers. Leftovers are app data and need your confirmation."
+            ),
+            Stat(
+                value: format(report.disk.purgeableBytes),
+                label: "Purgeable",
+                tint: .secondary,
+                help: "Space macOS can free on demand. SiftBar does not delete purgeable data."
+            )
+        ]
+    }
+
+    private func memoryStats(_ report: ScanReport, _ metrics: ReviewMetrics) -> [Stat] {
+        let memory = report.memory
+        let tint = memoryTint(memory)
+        let swap = memory.swapUsedBytes > 0 ? formatMemory(memory.swapUsedBytes) : "None"
 
         return [
             Stat(
-                value: "\(report.items.count)",
-                label: "Findings",
+                value: formatMemory(memory.usedBytes),
+                label: "Used",
+                tint: tint,
+                help: "App + wired + compressed, the same definition Activity Monitor uses. \(formatMemory(memory.totalBytes)) total."
+            ),
+            Stat(
+                value: memory.hasBreakdown ? formatMemory(memory.appBytes) : "—",
+                label: "App memory",
                 tint: .primary,
-                help: "\(report.items.count) items found in this scan."
+                help: "Memory used by apps and processes, excluding compressed and wired memory."
             ),
             Stat(
-                value: "\(review)",
-                label: "Need review",
-                tint: reviewTint,
-                help: "\(dangerous) dangerous · \(caution) caution"
+                value: memory.hasBreakdown ? formatMemory(memory.wiredBytes) : "—",
+                label: "Wired",
+                tint: .secondary,
+                help: "Memory the system cannot page out."
             ),
             Stat(
-                value: format(reclaimable),
-                label: "Reclaimable",
-                tint: reclaimable > 0 ? .green : .secondary,
-                help: "Space and memory the changeable items can release."
+                value: memory.hasBreakdown ? formatMemory(memory.compressedBytes) : "—",
+                label: "Compressed",
+                tint: memory.compressedBytes > 1_500_000_000 ? .orange : .secondary,
+                help: "Memory macOS compressed instead of writing it to swap."
             ),
             Stat(
-                value: formatMemory(report.memory.usedBytes),
-                label: "Memory used",
-                tint: memoryTint,
-                help: "\(formatMemory(report.memory.usedBytes)) of \(formatMemory(report.memory.totalBytes)) used\(swap)"
-            ),
-            Stat(
-                value: format(report.disk.freeBytes),
-                label: "Disk free",
-                tint: diskTint,
-                help: "\(format(report.disk.freeBytes)) free · \(Int(usedRatio * 100))% used"
+                value: swap,
+                label: "Swap",
+                tint: memory.swapUsedBytes > 2_000_000_000 ? .orange : .secondary,
+                help: "Disk space being used as RAM. \(metrics.memoryReleasableBytes > 0 ? "Quitting listed apps can release \(formatMemory(UInt64(metrics.memoryReleasableBytes)))." : "")"
             )
         ]
+    }
+
+    private func reclaimStats(_ metrics: ReviewMetrics) -> [Stat] {
+        let cacheBytes = categoryItems(.caches, in: allItems)
+            .compactMap(\.impactBytes)
+            .reduce(0, +)
+
+        return [
+            Stat(
+                value: "\(metrics.findings)",
+                label: "Items",
+                tint: .primary,
+                help: "Changeable cache items in this category."
+            ),
+            Stat(
+                value: format(cacheBytes),
+                label: "Caches",
+                tint: cacheBytes > 0 ? .green : .secondary,
+                help: "Recreatable cache data. Empty the Trash after moving it to actually free the space."
+            ),
+            Stat(
+                value: "\(metrics.needReview)",
+                label: "Need review",
+                tint: reviewTint(metrics),
+                help: "\(metrics.dangerous) dangerous · \(metrics.caution) caution"
+            )
+        ]
+    }
+
+    private func leftoverStats(_ metrics: ReviewMetrics) -> [Stat] {
+        let items = categoryItems(.leftovers, in: allItems)
+        let bytes = items.compactMap(\.impactBytes).reduce(0, +)
+
+        return [
+            Stat(
+                value: "\(items.count)",
+                label: "Possible leftovers",
+                tint: items.isEmpty ? .secondary : .orange,
+                help: "Application Support folders with no matching installed app."
+            ),
+            Stat(
+                value: format(bytes),
+                label: "Total size",
+                tint: .primary,
+                help: "App data that could be moved to the Trash. Review the contents first."
+            ),
+            Stat(
+                value: "\(metrics.needReview)",
+                label: "Need review",
+                tint: reviewTint(metrics),
+                help: "Leftovers are user data, not recreatable cache."
+            )
+        ]
+    }
+
+    private func processStats(_ metrics: ReviewMetrics) -> [Stat] {
+        [
+            Stat(
+                value: "\(metrics.findings)",
+                label: "Apps to review",
+                tint: .primary,
+                help: "Apps with processes above 150 MB that SiftBar can act on. Protected system processes are shown separately and are not counted."
+            ),
+            Stat(
+                value: "\(metrics.needReview)",
+                label: "Need review",
+                tint: reviewTint(metrics),
+                help: "\(metrics.caution) caution · \(metrics.dangerous) protected"
+            ),
+            Stat(
+                value: formatMemory(UInt64(max(metrics.memoryReleasableBytes, 0))),
+                label: "RAM if quit",
+                tint: metrics.memoryReleasableBytes > 0 ? .primary : .secondary,
+                help: "Sum of resident memory for the listed apps."
+            )
+        ]
+    }
+
+    private func reviewStats(_ metrics: ReviewMetrics) -> [Stat] {
+        [
+            Stat(
+                value: "\(metrics.findings)",
+                label: "Findings",
+                tint: .primary,
+                help: "Informational summary rows are not counted."
+            ),
+            Stat(
+                value: "\(metrics.needReview)",
+                label: "Need review",
+                tint: reviewTint(metrics),
+                help: "\(metrics.dangerous) dangerous · \(metrics.caution) caution"
+            )
+        ]
+    }
+
+    private func reviewTint(_ metrics: ReviewMetrics) -> Color {
+        metrics.dangerous > 0 ? .red : (metrics.caution > 0 ? .orange : .green)
+    }
+
+    private func diskTint(_ disk: DiskStats) -> Color {
+        if disk.usedRatio >= 0.90 { return .red }
+        if disk.usedRatio >= 0.80 { return .orange }
+        return .primary
+    }
+
+    private func memoryTint(_ memory: MemoryStats) -> Color {
+        switch memory.pressure {
+        case .critical: return .red
+        case .warning: return .orange
+        case .normal: return .primary
+        }
     }
 
     // MARK: - Result
@@ -450,10 +981,21 @@ struct DashboardView: View {
         let headline: String
         if actions.failedCount > 0 {
             headline = "\(actions.changedCount) of \(actions.reports.count) completed"
-        } else if actions.reclaimedBytes > 0 {
-            headline = "\(format(actions.reclaimedBytes)) freed"
+        } else if actions.diskMovedBytes > 0 && actions.memoryReleasedBytes > 0 {
+            headline = "\(format(actions.diskMovedBytes)) moved to Trash · \(formatMemory(UInt64(actions.memoryReleasedBytes))) RAM released"
+        } else if actions.diskMovedBytes > 0 {
+            headline = "\(format(actions.diskMovedBytes)) moved to Trash"
+        } else if actions.memoryReleasedBytes > 0 {
+            headline = "\(formatMemory(UInt64(actions.memoryReleasedBytes))) RAM released"
         } else {
             headline = "\(actions.changedCount) \(actions.changedCount == 1 ? "item" : "items") changed"
+        }
+
+        let detail: String
+        if actions.diskMovedBytes > 0 {
+            detail = "\(actions.changedCount) succeeded · \(actions.failedCount) failed · Empty the Trash to free space"
+        } else {
+            detail = "\(actions.changedCount) succeeded · \(actions.failedCount) failed"
         }
 
         return HStack(spacing: 14) {
@@ -467,7 +1009,7 @@ struct DashboardView: View {
                     .font(.title3.weight(.semibold))
                     .monospacedDigit()
 
-                Text("\(actions.changedCount) succeeded · \(actions.failedCount) failed")
+                Text(detail)
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -543,13 +1085,13 @@ struct DashboardView: View {
         }
 
         switch category {
-        case .memory: return "How the system is using memory right now."
-        case .processes: return "Heavy processes running now. Quit what you do not need."
+        case .memory: return "What is using RAM and what quitting an app would release. This does not free disk space."
+        case .processes: return "Heavy processes running now, grouped by app. Quit what you do not need."
         case .startup: return "Apps and agents that start automatically. Disable what you do not recognize."
         case .services: return "Homebrew services that start or run in the background."
-        case .disk: return "Space used on the startup volume."
+        case .disk: return "Where space goes, what is safe to reclaim, and what SiftBar will not touch."
         case .caches: return "Recreatable data. Moving it to the Trash slows the next run but keeps your files."
-        case .leftovers: return "Application Support folders with no matching app. Review before deleting."
+        case .leftovers: return "App data left behind by apps that are no longer installed. Review before deleting."
         }
     }
 
@@ -559,21 +1101,44 @@ struct DashboardView: View {
         appState.report?.items ?? []
     }
 
+    private var allMetrics: ReviewMetrics {
+        ReviewMetrics.make(visible: allItems, all: allItems)
+    }
+
     private var filteredItems: [ScanItem] {
-        filter.apply(to: categoryItems(page.category, in: allItems))
+        listItems(filter.apply(to: categoryItems(page.category, in: allItems)))
     }
 
     private func visibleItems(in report: ScanReport) -> [ScanItem] {
-        filter.apply(to: categoryItems(page.category, in: report.items))
+        listItems(filter.apply(to: categoryItems(page.category, in: report.items)))
+    }
+
+    /// Rows that belong in the scrollable list. Space-map rows live in the card,
+    /// and the Disk tab uses the card for the startup-disk numbers instead of
+    /// repeating them as a non-actionable row.
+    private func listItems(_ items: [ScanItem]) -> [ScanItem] {
+        items
+            .filter { !$0.isBreakdown }
+            .filter { !(page.category == .disk && $0.title == "Startup disk") }
     }
 
     private func categoryItems(_ category: ItemCategory?, in items: [ScanItem]) -> [ScanItem] {
         guard let category else { return items }
+        if category == .memory {
+            return items.filter { $0.category == .memory || $0.category == .processes }
+        }
+        if category == .disk {
+            return items.filter {
+                $0.category == .disk || $0.category == .caches || $0.category == .leftovers
+            }
+        }
         return items.filter { $0.category == category }
     }
 
     private func count(of category: ItemCategory) -> Int {
-        allItems.filter { $0.category == category }.count
+        categoryItems(category, in: allItems)
+            .filter { !$0.isBreakdown && !$0.isInformational }
+            .count
     }
 
     private func count(of risk: Risk) -> Int {
@@ -583,7 +1148,7 @@ struct DashboardView: View {
         base.risk = nil
 
         return base
-            .apply(to: categoryItems(page.category, in: allItems))
+            .apply(to: categoryItems(page.category, in: allItems).filter { !$0.isBreakdown })
             .filter { $0.risk == risk }
             .count
     }
@@ -600,6 +1165,75 @@ struct DashboardView: View {
         Task {
             await actions.run()
             await appState.analyze()
+        }
+    }
+}
+
+private struct BreakdownSegment: Identifiable {
+    let id = UUID()
+    let name: String
+    let bytes: Int64
+    let color: Color
+    let memoryUnits: Bool
+
+    init(name: String, bytes: Int64, color: Color, memoryUnits: Bool = false) {
+        self.name = name
+        self.bytes = bytes
+        self.color = color
+        self.memoryUnits = memoryUnits
+    }
+
+    var label: String {
+        ByteCountFormatter.string(
+            fromByteCount: bytes,
+            countStyle: memoryUnits ? .memory : .file
+        )
+    }
+}
+
+private struct BreakdownBar: View {
+    let segments: [BreakdownSegment]
+    let total: Int64
+
+    var body: some View {
+        GeometryReader { geometry in
+            HStack(spacing: 1) {
+                ForEach(segments.filter { $0.bytes > 0 }) { segment in
+                    Rectangle()
+                        .fill(segment.color)
+                        .frame(width: width(for: segment, in: geometry.size.width))
+                }
+            }
+        }
+        .frame(height: 10)
+        .background(Color.primary.opacity(0.06))
+        .clipShape(Capsule())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(segments.map { "\($0.name) \($0.label)" }.joined(separator: ", "))
+    }
+
+    private func width(for segment: BreakdownSegment, in available: CGFloat) -> CGFloat {
+        guard total > 0 else { return 0 }
+        return max(0, available * CGFloat(segment.bytes) / CGFloat(total))
+    }
+}
+
+private struct BreakdownLegend: View {
+    let segment: BreakdownSegment
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(segment.color)
+                .frame(width: 7, height: 7)
+
+            Text(segment.name)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Text(segment.label)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.primary)
         }
     }
 }

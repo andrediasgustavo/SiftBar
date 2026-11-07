@@ -16,18 +16,48 @@ exact command SiftBar will run. Nothing happens without your confirmation.
 
 ![SiftBar overview](docs/screenshots/overview.png)
 
+## What's new in 0.3.0
+
+- **Memory and Disk are separate dashboards.** Memory uses the same
+  app/wired/compressed definition as Activity Monitor; Disk matches System
+  Settings and explains APFS volumes.
+- **The Disk tab is actionable.** It combines the space map with a **Clean up**
+  list of caches and reviewed leftovers, with checkboxes and command previews.
+  **Show details / Hide details** collapses the map when you need more room.
+- **Caches are itemized per app**, with a warning when the app is still running.
+- **Protected system processes** are labelled `Protected`, excluded from the
+  review count, and offer Activity Monitor instead of a dead end.
+- **Safer leftovers.** iCloud/Apple folders such as `CloudDocs` and
+  `FileProvider` are never offered for deletion; the remaining leftovers are
+  shown as user data that needs review.
+- **One-time, optional permission onboarding** for Full Disk Access, with the
+  app continuing normally if you choose **Not now**.
+
 ## What it does
 
+- **Memory** — an Activity Monitor-style breakdown (app, wired, compressed,
+  cached, free), swap and pressure, plus the apps using the most RAM with a
+  one-click Quit. Memory numbers never get mixed with disk numbers.
+- **Disk** — container-level usage that matches System Settings, a measured
+  space map, APFS volume breakdown (macOS, Preboot, Recovery, VM, Data), and a
+  **Clean up** list of caches and reviewed leftovers. The map collapses with
+  **Show details / Hide details**, so the actionable list gets the space.
 - **Startup & login items** — see the launch agents and daemons that start with
   your Mac, and disable the ones you do not recognize.
-- **Heavy processes** — find the apps using the most memory and quit a single
-  process when you no longer need it.
-- **Caches** — reclaim space by moving recreatable cache folders to the Trash.
-  SiftBar warns when a related app is still running.
+- **Heavy processes** — helpers are grouped under the app they belong to, so
+  Chrome, VS Code, and Spotify appear once with their real total. Protected
+  macOS processes are labelled `Protected`, excluded from the review count, and
+  offer Activity Monitor instead of a dead-end warning.
+- **Caches** — one row per app cache, with a warning when the app is still
+  running. Moving a cache to the Trash is transparent and reversible.
+- **Leftovers** — Application Support data from apps that are no longer
+  installed. SiftBar shows the size, explains that it is user data, and only
+  moves it to the Trash after confirmation.
 - **Biggest consumers** — see the largest files and folders in Downloads,
-  Desktop, Documents, Movies, Pictures, and Music, and reveal them in Finder.
+  Desktop, and Documents, and reveal them in Finder.
 - **Clear explanations** — every row shows its impact, its source, and a risk
-  label (`Safe`, `Caution`, or `Dangerous`).
+  label (`Safe`, `Caution`, or `Dangerous`). Informational rows are labelled
+  `Info` and never counted as findings.
 
 ## How it works
 
@@ -36,8 +66,11 @@ exact command SiftBar will run. Nothing happens without your confirmation.
 2. **Review** — findings are sorted by risk, so red and orange items come first.
    Search, filter by risk, and open a folder in Finder from its row.
 3. **Apply** — select the items you want, review the exact commands, and
-   confirm. SiftBar rescans and shows what was freed.
-4. **See the result** — a result card reports reclaimed space and any failures.
+   confirm. SiftBar rescans and shows what moved to the Trash or which RAM was
+   released.
+4. **See the result** — a result card separates disk bytes moved to the Trash
+   from RAM released by quitting apps. Empty the Trash to actually free disk
+   space.
 
 ## See it in action
 
@@ -130,15 +163,26 @@ This bypasses Gatekeeper's first-launch check; it is not required for normal
 installations.
 </details>
 
-### Full Disk Access (optional)
+### One permission instead of three
 
-SiftBar is read-only, but macOS protects some folders (Mail, Messages, and
-parts of `~/Library`). Without access, those findings are simply missing from
-the scan.
+macOS protects **Desktop**, **Documents** and **Downloads** separately, so a
+naive scan triggers three different permission prompts. macOS has no API to
+combine them; **Full Disk Access** is the single consent that covers all three.
 
-1. Open **System Settings → Privacy & Security → Full Disk Access**.
-2. Click **+**, choose **Applications/SiftBar.app**, and enable it.
-3. Quit SiftBar from the menu bar and open it again.
+Without Full Disk Access, SiftBar skips those three folders. The first time
+you open the dashboard it shows a one-time, optional sheet explaining what is
+missing; the app keeps working normally if you choose **Not now**. A small
+**Partial disk map** note stays in the Disk tab so you can complete access later.
+
+1. In the sheet, click **Open Full Disk Access**.
+2. Enable **SiftBar** in **System Settings → Privacy & Security → Full Disk
+   Access**.
+3. Return to SiftBar and click **Check again**. If the permission does not take
+   effect immediately, quit SiftBar from the menu bar and open it again.
+
+Prefer not to grant Full Disk Access? Open **Other ways to grant access → Use
+folder prompts instead**. macOS will then ask once per protected folder, and
+SiftBar remembers your choice.
 
 SiftBar never asks for administrator rights or runs `sudo`.
 
@@ -153,9 +197,11 @@ SiftBar never asks for administrator rights or runs `sudo`.
 5. Grouped processes show a chevron; expand the row to quit a specific PID.
    Disabled launch items appear as **Disabled launch item** and can be enabled
    again.
-6. Open **Disk** to see the largest files and folders in your content
-   directories. They are read-only; use the folder button to review them in
-   Finder.
+6. Open **Disk** to see the space map, APFS volumes, largest files and folders,
+   and the **Clean up** list of caches and reviewed leftovers — all actionable
+   from the same tab. Use **Show details / Hide details** to collapse the map
+   and give the cleanup list more room; SiftBar remembers your choice. Large
+   files are read-only; use the folder button to review them in Finder.
 7. Select changeable items with the checkboxes, then use the action bar at the
    bottom.
 8. Review the commands and confirm. SiftBar runs them, rescans, and shows the
@@ -187,6 +233,7 @@ ad-hoc, and launches it.
 | `./scripts/run.sh debug` | Same, with an unoptimized debug build |
 | `./scripts/build.sh` | Build `dist/SiftBar.app` without launching |
 | `./scripts/build.sh debug` | Debug build without launching |
+| `./scripts/test.sh` | Run the full XCTest suite without Xcode (local fallback) |
 | `./scripts/package.sh` | Build `dist/SiftBar.dmg` from the app bundle |
 | `./scripts/clean.sh` | Remove `.build/` and `dist/` |
 | `swift scripts/make-icon.swift Resources/AppIcon.icns` | Regenerate the app icon |
@@ -216,7 +263,7 @@ Use the table below to find where each value lives.
 |---|---|---|
 | Bundle identifier | `com.andredias.siftbar` | `Resources/Info.plist` → `CFBundleIdentifier` |
 | Display name | `SiftBar` | `Resources/Info.plist` → `CFBundleDisplayName` / `CFBundleName` |
-| Version | `0.2.1` (build `3`) | `Resources/Info.plist` → `CFBundleShortVersionString` / `CFBundleVersion` |
+| Version | `0.3.0` (build `5`) | `Resources/Info.plist` → `CFBundleShortVersionString` / `CFBundleVersion` |
 | Minimum macOS | `13.0` | `Resources/Info.plist` → `LSMinimumSystemVersion`, `Package.swift` → `.macOS(.v13)`, `scripts/build.sh` → `-target` |
 | Menu bar only | enabled | `Resources/Info.plist` → `LSUIElement` |
 | Build configuration | `release` | First argument to `scripts/build.sh` / `scripts/run.sh` (`release` or `debug`) |
@@ -233,19 +280,31 @@ Runtime data:
 
 ## Tests and CI
 
-Unit tests live in `Tests/SiftBarTests/` and use XCTest. Run them with:
+Unit tests live in `Tests/SiftBarTests/` and use XCTest. With full Xcode, run:
 
 ```bash
 swift test
 ```
 
-The suite has 198 tests covering command execution, every parser (`vm_stat`,
-swap, `df`, `ps`, `launchctl`, `brew services`, `du`), risk thresholds,
-protected-process rules, duplicate detection, grouping, per-PID children,
-filtering, search, sorting, action previews, selection rules, disabled/enabled
-launch labels, history storage, cleanup whitelist enforcement (including
-traversal and symlink escapes), largest-consumer ranking, running-app warnings,
-and a live read-only scan.
+On a Command Line Tools-only machine, use the local fallback:
+
+```bash
+./scripts/test.sh
+```
+
+It compiles a small XCTest-compatible module, builds the app as a testable
+library, generates a runner from every `func test…`, and executes the same
+suite without `XCTest.framework` or SwiftPM.
+
+The suite has 246 tests covering command execution (including output larger
+than a pipe buffer), every parser (`vm_stat`, `top`, swap, `df`, `ps`,
+`launchctl`, `brew services`, `du`), risk thresholds, protected-process rules,
+duplicate detection, app-level process grouping, per-PID children, filtering,
+search, sorting, action previews, selection rules, disabled/enabled launch
+labels, disk/memory metric separation, space-map grouping, history storage,
+cleanup whitelist enforcement (including traversal and symlink escapes),
+largest-consumer ranking, per-app cache detection, running-app warnings, and a
+live read-only scan, APFS volume parsing, protected-process classification, and memory/disk separation.
 
 The GitHub Actions workflow at `.github/workflows/ci.yml` runs on every push
 and pull request to `main`:

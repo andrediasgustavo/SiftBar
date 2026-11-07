@@ -116,6 +116,15 @@ final class StartupCollectorTests: XCTestCase {
         XCTAssertEqual(StartupCollector.risk(forDirectory: "/Library/LaunchDaemons"), .caution)
     }
 
+    func testLaunchDaemonsAreLabelledAsDaemons() {
+        XCTAssertEqual(StartupCollector.kind(forDirectory: "/Library/LaunchDaemons"), "launch daemon")
+        XCTAssertEqual(StartupCollector.kind(forDirectory: "/Library/LaunchAgents"), "launch agent")
+        XCTAssertEqual(
+            StartupCollector.kind(forDirectory: "/Users/tester/Library/LaunchAgents"),
+            "launch agent"
+        )
+    }
+
     func testUserLaunchAgentsAreSafe() {
         XCTAssertEqual(
             StartupCollector.risk(forDirectory: "/Users/tester/Library/LaunchAgents"),

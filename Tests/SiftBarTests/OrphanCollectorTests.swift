@@ -54,6 +54,21 @@ final class OrphanCollectorTests: XCTestCase {
         XCTAssertTrue(candidates.isEmpty)
     }
 
+    func testAppleAndCloudFoldersAreNeverLeftovers() {
+        let entries = ["CloudDocs", "FileProvider", "Knowledge", "JetBrains"]
+
+        let candidates = OrphanCollector.candidates(
+            entries: entries,
+            installed: [],
+            supportPath: "/tmp"
+        )
+
+        XCTAssertEqual(candidates.map(\.name), ["JetBrains"])
+        XCTAssertTrue(OrphanCollector.isSystemOwned("CloudDocs"))
+        XCTAssertTrue(OrphanCollector.isSystemOwned("FileProvider"))
+        XCTAssertFalse(OrphanCollector.isSystemOwned("JetBrains"))
+    }
+
     func testItemsAreSortedBySizeAndLimited() {
         let measured = [
             OrphanCollector.Measured(
@@ -78,9 +93,12 @@ final class OrphanCollectorTests: XCTestCase {
             "Possible leftover: Medium"
         ])
         XCTAssertEqual(items[0].risk, .caution)
-        XCTAssertEqual(items[0].action, .none)
+        XCTAssertEqual(items[0].action, .trashLeftover(path: "/tmp/Large", bytes: 900_000_000))
         XCTAssertEqual(items[0].impactBytes, 900_000_000)
         XCTAssertEqual(items[0].evidence, "/tmp/Large")
+        XCTAssertNotNil(items[0].warning)
+        XCTAssertTrue(items[0].detail.contains("No app named Large is installed"))
+        XCTAssertFalse(items[0].isInformational)
     }
 
     func testEmptyMeasuredListProducesNoItems() {

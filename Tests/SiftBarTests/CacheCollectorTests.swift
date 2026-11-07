@@ -127,4 +127,77 @@ final class CacheCollectorTests: XCTestCase {
     func testEmptyMeasuredListProducesNoItems() {
         XCTAssertTrue(CacheCollector.items(from: []).isEmpty)
     }
+
+    func testNestedCacheIsNotCountedTwice() {
+        let general = CacheCollector.Measured(
+            target: .init(name: "General", path: "/tmp/Caches", risk: .caution),
+            bytes: 1_000 * 1024 * 1024
+        )
+        let homebrew = CacheCollector.Measured(
+            target: .init(name: "Homebrew", path: "/tmp/Caches/Homebrew", risk: .safe),
+            bytes: 100 * 1024 * 1024
+        )
+
+        let adjusted = CacheCollector.removingNestedOverlap([general, homebrew])
+
+        XCTAssertEqual(adjusted.first { $0.target.name == "General" }?.bytes, 900 * 1024 * 1024)
+        XCTAssertEqual(adjusted.first { $0.target.name == "Homebrew" }?.bytes, 100 * 1024 * 1024)
+    }
+
+    func testNestedOverlapDoesNotChangeUnrelatedCaches() {
+        let xcode = CacheCollector.Measured(
+            target: .init(name: "Xcode DerivedData", path: "/tmp/DerivedData", risk: .safe),
+            bytes: 500 * 1024 * 1024
+        )
+        let general = CacheCollector.Measured(
+            target: .init(name: "General", path: "/tmp/Caches", risk: .caution),
+            bytes: 300 * 1024 * 1024
+        )
+
+        let adjusted = CacheCollector.removingNestedOverlap([xcode, general])
+
+        XCTAssertEqual(adjusted.map(\.bytes), [500 * 1024 * 1024, 300 * 1024 * 1024])
+    }
+
+    func testDynamicCachesGetFriendlyNamesAndSkipNoise() {
+        let caches = "/Users/tester/Library/Caches"
+        let children = [
+            PathSizer.ChildSize(path: "\(caches)/com.microsoft.VSCode.ShipIt", bytes: 1_500_000_000),
+            PathSizer.ChildSize(path: "\(caches)/Google", bytes: 1_400_000_000),
+            PathSizer.ChildSize(path: "\(caches)/Homebrew", bytes: 100_000_000),
+            PathSizer.ChildSize(path: "\(caches)/.hidden", bytes: 90_000_000),
+            PathSizer.ChildSize(path: "\(caches)/com.apple.foo", bytes: 90_000_000),
+            PathSizer.ChildSize(path: "\(caches)/Tiny", bytes: 1_000_000)
+        ]
+
+        let measured = CacheCollector.dynamicMeasured(
+            children: children,
+            cachesPath: caches,
+            excluding: ["\(caches)/Homebrew"]
+        )
+
+        XCTAssertEqual(measured.map(\.target.name), ["VSCode update", "Google Chrome"])
+        XCTAssertEqual(measured.map(\.bytes), [1_500_000_000, 1_400_000_000])
+        XCTAssertEqual(measured[0].target.relatedApps, ["code"])
+        XCTAssertEqual(measured[1].target.relatedApps, ["google chrome"])
+        XCTAssertEqual(measured[0].target.risk, .caution)
+    }
+
+    func testDynamicCacheWarningUsesFriendlyAppName() {
+        let target = CacheCollector.Target(
+            name: "Google Chrome",
+            path: "/tmp/Google",
+            risk: .caution,
+            relatedApps: ["google chrome"]
+        )
+        let items = CacheCollector.items(
+            from: [CacheCollector.Measured(target: target, bytes: 42)],
+            running: ["google chrome"]
+        )
+
+        XCTAssertEqual(
+            items[0].warning,
+            "Google Chrome is running. Quit it before moving this cache to the Trash."
+        )
+    }
 }

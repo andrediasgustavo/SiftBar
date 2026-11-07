@@ -1,21 +1,43 @@
 import Foundation
 
 enum ScanCoordinator {
-    static func run() async -> ScanReport {
+    static func run(includeProtectedFolders: Bool = true) async -> ScanReport {
         let snapshot = await SystemProbe.snapshotOrEmpty()
 
-        let collectors: [any Collector] = [
+        // Fast system state first: process and startup scans should not compete
+        // with the large `du` walks for I/O or the process table.
+        let fastCollectors: [any Collector] = [
             MemoryCollector(memory: snapshot.memory),
             ProcessCollector(),
             StartupCollector(),
             BrewCollector(),
             DiskCollector(disk: snapshot.disk),
-            LargeConsumersCollector(),
+            LargeConsumersCollector(includeProtectedFolders: includeProtectedFolders),
             CacheCollector(),
             OrphanCollector()
         ]
 
-        let items = await withTaskGroup(of: [ScanItem].self) { group in
+        var items = await collect(fastCollectors)
+
+        // The space map walks ~/Library and /Library. Run it after the fast
+        // collectors so a busy disk cannot make the process list time out.
+        items.append(contentsOf: await collect([
+            DiskUsageCollector(
+                disk: snapshot.disk,
+                includeProtectedFolders: includeProtectedFolders
+            )
+        ]))
+
+        return ScanReport(
+            generatedAt: Date(),
+            items: sort(items),
+            memory: snapshot.memory,
+            disk: snapshot.disk
+        )
+    }
+
+    private static func collect(_ collectors: [any Collector]) async -> [ScanItem] {
+        await withTaskGroup(of: [ScanItem].self) { group in
             for collector in collectors {
                 group.addTask {
                     await collector.collect()
@@ -28,13 +50,6 @@ enum ScanCoordinator {
             }
             return all
         }
-
-        return ScanReport(
-            generatedAt: Date(),
-            items: sort(items),
-            memory: snapshot.memory,
-            disk: snapshot.disk
-        )
     }
 
     /// Groups items by category order, then by impact (largest first), then

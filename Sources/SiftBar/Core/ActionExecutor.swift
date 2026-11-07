@@ -7,6 +7,8 @@ struct ActionReport: Identifiable, Sendable {
     let success: Bool
     let message: String
     let reclaimedBytes: Int64
+    let domain: ReclaimDomain?
+    let movedToTrash: Bool
 
     init(item: ScanItem, success: Bool, message: String) {
         self.id = item.id
@@ -14,6 +16,13 @@ struct ActionReport: Identifiable, Sendable {
         self.success = success
         self.message = message
         self.reclaimedBytes = success ? (item.impactBytes ?? 0) : 0
+        self.domain = item.reclaimDomain
+        self.movedToTrash = {
+            switch item.action {
+            case .deletePath, .trashLeftover: return true
+            default: return false
+            }
+        }()
     }
 }
 
@@ -45,6 +54,9 @@ enum ActionExecutor {
 
         case .deletePath(let path, _):
             return "Move to Trash: \(path)"
+
+        case .trashLeftover(let path, _):
+            return "Move leftover app data to Trash: \(path)"
         }
     }
 
@@ -79,6 +91,7 @@ enum ActionExecutor {
         case .enableLaunchItem: return "Enable"
         case .stopService: return "Stop"
         case .deletePath: return "Move to Trash"
+        case .trashLeftover: return "Move to Trash"
         }
     }
 
@@ -95,6 +108,7 @@ enum ActionExecutor {
         case .enableLaunchItem: return "Enable Launch Item…"
         case .stopService: return "Stop Service…"
         case .deletePath: return "Move to Trash…"
+        case .trashLeftover: return "Move Leftover to Trash…"
         }
     }
 
@@ -197,6 +211,32 @@ enum ActionExecutor {
                 return ActionReport(item: item, success: false, message: error.localizedDescription)
             }
 
+        case .trashLeftover(let path, _):
+            guard CleanupWhitelist.allowsLeftover(path) else {
+                return ActionReport(
+                    item: item,
+                    success: false,
+                    message: "Refused: \(path) is not a top-level Application Support folder."
+                )
+            }
+
+            do {
+                try await Task.detached(priority: .userInitiated) {
+                    try FileManager.default.trashItem(
+                        at: URL(fileURLWithPath: path),
+                        resultingItemURL: nil
+                    )
+                }.value
+
+                return ActionReport(
+                    item: item,
+                    success: true,
+                    message: "Moved to Trash: \(path). Empty the Trash to free the space."
+                )
+            } catch {
+                return ActionReport(item: item, success: false, message: error.localizedDescription)
+            }
+
         case .removeLoginItem(let name):
             return ActionReport(
                 item: item,
@@ -248,6 +288,8 @@ extension ScanItem {
             // System-wide caches need admin rights too. Phase 5 is deferred, so
             // lock them instead of letting a doomed action run without sudo.
             return path.hasPrefix("/Library/")
+        case .trashLeftover:
+            return false
         default:
             return false
         }
@@ -264,6 +306,9 @@ extension ScanItem {
 
         switch action {
         case .deletePath(let path, _):
+            return URL(fileURLWithPath: path)
+
+        case .trashLeftover(let path, _):
             return URL(fileURLWithPath: path)
 
         case .disableLaunchItem(let label), .enableLaunchItem(let label):

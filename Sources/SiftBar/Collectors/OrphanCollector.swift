@@ -6,6 +6,27 @@ struct OrphanCollector: Collector {
     static let minimumBytes: Int64 = 200 * 1024 * 1024
     static let limit = 10
 
+    /// Apple/cloud folders that look like app names but are system data. They
+    /// must never be offered as leftovers, even when no matching app exists.
+    static let systemOwnedNames: Set<String> = [
+        "clouddocs",
+        "fileprovider",
+        "knowledge",
+        "callhistorydb",
+        "addressbook",
+        "calendars",
+        "messages",
+        "mail",
+        "safari",
+        "icloud",
+        "ubiquity",
+        "sharedfilelist",
+        "dock",
+        "spotlight",
+        "homekit",
+        "photos"
+    ]
+
     struct Candidate: Sendable, Equatable {
         let name: String
         let path: String
@@ -60,12 +81,14 @@ struct OrphanCollector: Collector {
                 ScanItem(
                     category: .leftovers,
                     title: "Possible leftover: \(item.candidate.name)",
-                    detail: "Application Support folder with no clearly matching app. This is a heuristic — review the contents before deleting anything.",
+                    detail: "No app named \(item.candidate.name) is installed in /Applications, ~/Applications or /System/Applications. This folder can contain settings, history, saved games, or licenses, so it is not the same as a cache. Open it in Finder before deleting.",
                     impactLabel: ByteCountFormatter.string(fromByteCount: item.bytes, countStyle: .file),
                     impactBytes: item.bytes,
                     risk: .caution,
-                    action: .none,
-                    evidence: item.candidate.path
+                    action: .trashLeftover(path: item.candidate.path, bytes: item.bytes),
+                    evidence: item.candidate.path,
+                    warning: "Review the contents first. This is app data, not recreatable cache.",
+                    isInformational: false
                 )
             }
     }
@@ -78,9 +101,14 @@ struct OrphanCollector: Collector {
         supportPath: String
     ) -> [Candidate] {
         entries
-            .filter { !$0.hasPrefix(".") && !$0.hasPrefix("com.apple.") }
+            .filter { !$0.hasPrefix(".") && !$0.lowercased().hasPrefix("com.apple.") }
+            .filter { !isSystemOwned($0) }
             .filter { !hasMatchingApp(entry: $0, installed: installed) }
             .map { Candidate(name: $0, path: "\(supportPath)/\($0)") }
+    }
+
+    static func isSystemOwned(_ entry: String) -> Bool {
+        systemOwnedNames.contains(normalize(entry))
     }
 
     static func installedAppNames(

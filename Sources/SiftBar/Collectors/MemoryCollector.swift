@@ -16,6 +16,7 @@ struct MemoryCollector: Collector {
         var items: [ScanItem] = []
 
         if memory.swapUsedBytes > 0 {
+            let risk = swapRisk(for: memory.swapUsedBytes)
             items.append(ScanItem(
                 category: .memory,
                 title: "Swap in use",
@@ -25,9 +26,10 @@ struct MemoryCollector: Collector {
                     countStyle: .memory
                 ),
                 impactBytes: Int64(memory.swapUsedBytes),
-                risk: swapRisk(for: memory.swapUsedBytes),
+                risk: risk,
                 action: .none,
-                evidence: "sysctl -n vm.swapusage"
+                evidence: "sysctl -n vm.swapusage",
+                isInformational: risk == .safe
             ))
         }
 
@@ -35,11 +37,12 @@ struct MemoryCollector: Collector {
             category: .memory,
             title: "Memory pressure",
             detail: pressureDetail(for: memory.pressure),
-            impactLabel: memory.pressure.rawValue.capitalized,
+            impactLabel: memory.pressure.label,
             impactBytes: nil,
             risk: pressureRisk(for: memory.pressure),
             action: .none,
-            evidence: "memory_pressure"
+            evidence: "memory_pressure",
+            isInformational: memory.pressure == .normal
         ))
 
         return items

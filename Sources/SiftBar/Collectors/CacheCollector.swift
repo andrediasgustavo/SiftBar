@@ -29,7 +29,9 @@ struct CacheCollector: Collector {
 
     func collect() async -> [ScanItem] {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let targets = Self.targets(home: home)
+        // The broad `~/Library/Caches` target is replaced by one row per app
+        // cache, so the result is actionable instead of a single blob.
+        let targets = Self.targets(home: home).filter { $0.name != "General" }
         let running = await RunningProcesses.names()
 
         var measured: [Measured] = []
@@ -50,7 +52,82 @@ struct CacheCollector: Collector {
             }
         }
 
-        return Self.items(from: measured, running: running)
+        measured.append(contentsOf: await Self.dynamicMeasured(
+            home: home,
+            excluding: Set(targets.map(\.path))
+        ))
+
+        return Self.items(from: Self.removingNestedOverlap(measured), running: running)
+    }
+
+    /// One row per top-level app cache in `~/Library/Caches`, measured with a
+    /// single `du -d 1` instead of one process per folder.
+    static func dynamicMeasured(home: String, excluding: Set<String> = []) async -> [Measured] {
+        let cachesPath = "\(home)/Library/Caches"
+        let children = await PathSizer.childDirectorySizes(of: cachesPath, timeout: 20)
+        return dynamicMeasured(children: children, cachesPath: cachesPath, excluding: excluding)
+    }
+
+    static func dynamicMeasured(
+        children: [PathSizer.ChildSize],
+        cachesPath: String,
+        excluding: Set<String> = []
+    ) -> [Measured] {
+        children.compactMap { child in
+            let folder = URL(fileURLWithPath: child.path).lastPathComponent
+            guard !folder.hasPrefix("."),
+                  !folder.hasPrefix("com.apple."),
+                  !excluding.contains(child.path),
+                  child.bytes >= minimumBytes else {
+                return nil
+            }
+
+            return Measured(
+                target: Target(
+                    name: cacheDisplayName(for: folder),
+                    path: child.path,
+                    risk: .caution,
+                    relatedApps: relatedApps(forCacheFolder: folder)
+                ),
+                bytes: child.bytes
+            )
+        }
+    }
+
+    static func cacheDisplayName(for folder: String) -> String {
+        switch folder {
+        case "com.microsoft.VSCode.ShipIt": return "VSCode update"
+        case "Google": return "Google Chrome"
+        case "com.spotify.client": return "Spotify"
+        case "copilot": return "Copilot"
+        default: return folder
+        }
+    }
+
+    static func relatedApps(forCacheFolder folder: String) -> [String] {
+        switch folder {
+        case "com.microsoft.VSCode.ShipIt": return ["code"]
+        case "Google": return ["google chrome"]
+        case "com.spotify.client": return ["spotify"]
+        default: return []
+        }
+    }
+
+    /// `~/Library/Caches` contains the Homebrew cache. When both are measured,
+    /// the parent must not count the child's bytes a second time.
+    static func removingNestedOverlap(_ measured: [Measured]) -> [Measured] {
+        measured.compactMap { item in
+            let nestedBytes = measured
+                .filter {
+                    $0.target.path != item.target.path
+                        && $0.target.path.hasPrefix(item.target.path + "/")
+                }
+                .reduce(Int64(0)) { $0 + $1.bytes }
+
+            let bytes = max(0, item.bytes - nestedBytes)
+            guard bytes >= minimumBytes else { return nil }
+            return Measured(target: item.target, bytes: bytes)
+        }
     }
 
     static func targets(home: String) -> [Target] {
@@ -122,6 +199,9 @@ struct CacheCollector: Collector {
         case "simulator": return "Simulator"
         case "coresimulatorbridge": return "CoreSimulatorBridge"
         case "expo": return "Expo"
+        case "code": return "VS Code"
+        case "google chrome": return "Google Chrome"
+        case "spotify": return "Spotify"
         default:
             return String(process.prefix(1)).uppercased() + String(process.dropFirst())
         }
