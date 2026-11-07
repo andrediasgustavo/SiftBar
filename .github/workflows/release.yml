@@ -47,10 +47,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
+          NOTES_FILE="docs/release-notes/$GITHUB_REF_NAME.md"
+
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release already exists."
+          elif [ -f "$NOTES_FILE" ]; then
+            gh release create "$GITHUB_REF_NAME" \
+              --title "SiftBar $GITHUB_REF_NAME" \
+              --notes-file "$NOTES_FILE"
+          else
             gh release create "$GITHUB_REF_NAME" \
               --title "SiftBar $GITHUB_REF_NAME" \
               --generate-notes
+          fi
 
           gh release upload "$GITHUB_REF_NAME" dist/SiftBar.dmg --clobber
 
