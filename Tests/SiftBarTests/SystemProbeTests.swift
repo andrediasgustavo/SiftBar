@@ -202,7 +202,7 @@ final class SystemProbeTests: XCTestCase {
         let volumes = SystemProbe.parseAPFSVolumes(Data(xml.utf8))
 
         XCTAssertEqual(volumes.map(\.name), ["macOS", "Data"])
-        XCTAssertEqual(volumes.map(\.bytes), [500, 400])
+        XCTAssertEqual(volumes.map(\.bytes), [Int64(500), Int64(400)])
         XCTAssertEqual(volumes[0].id, "disk3s1")
         XCTAssertTrue(volumes[0].isSystem)
     }

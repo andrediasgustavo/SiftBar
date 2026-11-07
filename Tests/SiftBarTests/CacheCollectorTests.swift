@@ -156,7 +156,7 @@ final class CacheCollectorTests: XCTestCase {
 
         let adjusted = CacheCollector.removingNestedOverlap([xcode, general])
 
-        XCTAssertEqual(adjusted.map(\.bytes), [500 * 1024 * 1024, 300 * 1024 * 1024])
+        XCTAssertEqual(adjusted.map(\.bytes), [Int64(500 * 1024 * 1024), Int64(300 * 1024 * 1024)])
     }
 
     func testDynamicCachesGetFriendlyNamesAndSkipNoise() {
@@ -177,7 +177,7 @@ final class CacheCollectorTests: XCTestCase {
         )
 
         XCTAssertEqual(measured.map(\.target.name), ["VSCode update", "Google Chrome"])
-        XCTAssertEqual(measured.map(\.bytes), [1_500_000_000, 1_400_000_000])
+        XCTAssertEqual(measured.map(\.bytes), [Int64(1_500_000_000), Int64(1_400_000_000)])
         XCTAssertEqual(measured[0].target.relatedApps, ["code"])
         XCTAssertEqual(measured[1].target.relatedApps, ["google chrome"])
         XCTAssertEqual(measured[0].target.risk, .caution)
