@@ -104,4 +104,20 @@ final class ScanCoordinatorTests: XCTestCase {
         XCTAssertFalse(report.items.contains { $0.isSlowRefresh })
         XCTAssertFalse(report.items.contains { $0.isBreakdown })
     }
+
+    func testRunReportsProgressUntilCompletion() async {
+        final class Box: @unchecked Sendable {
+            var values: [ScanProgress] = []
+        }
+        let box = Box()
+
+        _ = await ScanCoordinator.run(includeSlowCollectors: false) { progress in
+            box.values.append(progress)
+        }
+
+        XCTAssertFalse(box.values.isEmpty)
+        XCTAssertEqual(box.values.first?.step, 1)
+        XCTAssertEqual(box.values.last?.fraction, 1)
+        XCTAssertEqual(box.values.last?.doneSteps, [1, 2, 3, 4])
+    }
 }

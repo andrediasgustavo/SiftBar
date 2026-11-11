@@ -113,9 +113,31 @@ final class ActionExecutorTests: XCTestCase {
         let two = item(action: .killProcess(pid: 2, name: "Bar"))
 
         XCTAssertEqual(ActionExecutor.title(for: [one]), "Quit Process…")
-        XCTAssertEqual(ActionExecutor.title(for: [one, two]), "Apply 2 Actions…")
+        XCTAssertEqual(ActionExecutor.title(for: [one, two]), "Quit 2 Processes…")
         XCTAssertEqual(ActionExecutor.sheetTitle(for: [one]), "Review 1 Action")
         XCTAssertEqual(ActionExecutor.sheetTitle(for: [one, two]), "Review 2 Actions")
+    }
+
+    func testBatchTitleMatchesTheSharedAction() {
+        let cacheA = item(action: .deletePath(path: "/tmp/a", bytes: 1))
+        let cacheB = item(action: .deletePath(path: "/tmp/b", bytes: 1))
+        let leftoverA = item(action: .trashLeftover(path: "/tmp/c", bytes: 1))
+        let leftoverB = item(action: .trashLeftover(path: "/tmp/d", bytes: 1))
+
+        XCTAssertEqual(ActionExecutor.title(for: [cacheA, cacheB]), "Move 2 to Trash…")
+        XCTAssertEqual(ActionExecutor.confirmTitle(for: [cacheA, cacheB]), "Move 2 to Trash")
+        XCTAssertEqual(
+            ActionExecutor.title(for: [leftoverA, leftoverB]),
+            "Move 2 Leftovers to Trash…"
+        )
+    }
+
+    func testMixedBatchUsesANeutralTitle() {
+        let cache = item(action: .deletePath(path: "/tmp/a", bytes: 1))
+        let process = item(action: .killProcess(pid: 42, name: "App"))
+
+        XCTAssertEqual(ActionExecutor.title(for: [cache, process]), "Apply 2 Actions…")
+        XCTAssertEqual(ActionExecutor.confirmTitle(for: [cache, process]), "Apply 2 Actions")
     }
 
     func testLibraryLaunchItemsRequireAdmin() {

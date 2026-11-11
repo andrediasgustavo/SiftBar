@@ -419,6 +419,54 @@ final class ModelTests: XCTestCase {
         XCTAssertFalse(item.isSlowRefresh)
     }
 
+    func testDisplayEvidenceUsesTheActionPathAndAbbreviatesHome() {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let path = home + "/Library/Caches/com.example.app"
+        let item = ScanItem(
+            category: .caches,
+            title: "Cache",
+            detail: "",
+            impactLabel: "",
+            impactBytes: 1,
+            risk: .safe,
+            action: .deletePath(path: path, bytes: 1),
+            evidence: "du -sk \(path)"
+        )
+
+        XCTAssertEqual(item.displayEvidence, "~/Library/Caches/com.example.app")
+    }
+
+    func testDisplayEvidenceKeepsCommandsWithoutAPath() {
+        let item = ScanItem(
+            category: .processes,
+            title: "App",
+            detail: "",
+            impactLabel: "",
+            impactBytes: 1,
+            risk: .caution,
+            action: .killProcess(pid: 1, name: "App"),
+            evidence: "ps -Ao pid=,user=,rss=,comm="
+        )
+
+        XCTAssertEqual(item.displayEvidence, "ps -Ao pid=,user=,rss=,comm=")
+    }
+
+    func testDisplayEvidenceAbbreviatesLaunchItemDirectories() {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let item = ScanItem(
+            category: .startup,
+            title: "com.example.agent",
+            detail: "",
+            impactLabel: "",
+            impactBytes: nil,
+            risk: .safe,
+            action: .disableLaunchItem(label: "com.example.agent"),
+            evidence: home + "/Library/LaunchAgents"
+        )
+
+        XCTAssertEqual(item.displayEvidence, "~/Library/LaunchAgents")
+    }
+
     func testMergingSlowItemsKeepsThePreviousSpaceMap() {
         let slow = ScanItem(
             category: .disk,

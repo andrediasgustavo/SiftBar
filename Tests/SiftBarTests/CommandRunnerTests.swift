@@ -86,4 +86,27 @@ final class CommandRunnerTests: XCTestCase {
             XCTFail("Expected CommandError, got \(error).")
         }
     }
+
+    /// `Stop` in the scan workspace cancels the Task; the child process must
+    /// be terminated instead of waiting for its timeout.
+    func testCancellingTheTaskTerminatesTheCommand() async throws {
+        let task = Task {
+            try await CommandRunner.run("/bin/sleep", arguments: ["30"], timeout: 60)
+        }
+
+        try await Task.sleep(nanoseconds: 200_000_000)
+        let started = Date()
+        task.cancel()
+
+        do {
+            _ = try await task.value
+            XCTFail("Expected the command to be cancelled.")
+        } catch is CancellationError {
+            // Expected: cancellation is reported as CancellationError.
+        } catch {
+            XCTFail("Expected CancellationError, got \(error).")
+        }
+
+        XCTAssertLessThan(Date().timeIntervalSince(started), 5)
+    }
 }

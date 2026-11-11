@@ -31,62 +31,83 @@ enum CommandRunner {
         arguments: [String] = [],
         timeout: TimeInterval = 10
     ) async throws -> CommandResult {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<CommandResult, Error>) in
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: executable)
-            process.arguments = arguments
+        if Task.isCancelled { throw CancellationError() }
 
-            let stdoutPipe = Pipe()
-            let stderrPipe = Pipe()
-            process.standardOutput = stdoutPipe
-            process.standardError = stderrPipe
+        let box = ProcessBox()
 
-            let resumeGuard = ResumeGuard()
-            let timeoutFlag = TimeoutFlag()
+        let result = try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<CommandResult, Error>) in
+                let process = box.process
+                process.executableURL = URL(fileURLWithPath: executable)
+                process.arguments = arguments
 
-            let timeoutItem = DispatchWorkItem {
-                guard process.isRunning else { return }
-                timeoutFlag.markTimedOut()
-                process.terminate()
-            }
-            DispatchQueue.global(qos: .userInitiated)
-                .asyncAfter(deadline: .now() + timeout, execute: timeoutItem)
+                let stdoutPipe = Pipe()
+                let stderrPipe = Pipe()
+                process.standardOutput = stdoutPipe
+                process.standardError = stderrPipe
 
-            do {
-                try process.run()
-            } catch {
-                timeoutItem.cancel()
-                resumeGuard.perform {
-                    continuation.resume(throwing: CommandError.launchFailed(error.localizedDescription))
+                let resumeGuard = ResumeGuard()
+                let timeoutFlag = TimeoutFlag()
+
+                let timeoutItem = DispatchWorkItem {
+                    guard process.isRunning else { return }
+                    timeoutFlag.markTimedOut()
+                    process.terminate()
                 }
-                return
-            }
+                DispatchQueue.global(qos: .userInitiated)
+                    .asyncAfter(deadline: .now() + timeout, execute: timeoutItem)
 
-            // Drain both pipes before waiting for the process. This prevents
-            // the child from blocking on a full pipe buffer.
-            DispatchQueue.global(qos: .userInitiated).async {
-                let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-                let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-                process.waitUntilExit()
-                timeoutItem.cancel()
-
-                if timeoutFlag.didTimeOut {
+                do {
+                    try process.run()
+                } catch {
+                    timeoutItem.cancel()
                     resumeGuard.perform {
-                        continuation.resume(throwing: CommandError.timedOut(timeout))
+                        continuation.resume(throwing: CommandError.launchFailed(error.localizedDescription))
                     }
                     return
                 }
 
-                resumeGuard.perform {
-                    continuation.resume(returning: CommandResult(
-                        stdout: String(data: stdoutData, encoding: .utf8) ?? "",
-                        stderr: String(data: stderrData, encoding: .utf8) ?? "",
-                        exitCode: process.terminationStatus
-                    ))
+                // Drain both pipes before waiting for the process. This prevents
+                // the child from blocking on a full pipe buffer.
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+                    let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+                    process.waitUntilExit()
+                    timeoutItem.cancel()
+
+                    if timeoutFlag.didTimeOut {
+                        resumeGuard.perform {
+                            continuation.resume(throwing: CommandError.timedOut(timeout))
+                        }
+                        return
+                    }
+
+                    resumeGuard.perform {
+                        continuation.resume(returning: CommandResult(
+                            stdout: String(data: stdoutData, encoding: .utf8) ?? "",
+                            stderr: String(data: stderrData, encoding: .utf8) ?? "",
+                            exitCode: process.terminationStatus
+                        ))
+                    }
                 }
             }
+        } onCancel: {
+            // `Stop` in the scan workspace cancels the task; terminating the
+            // child makes `du` return immediately instead of waiting for its
+            // timeout.
+            let process = box.process
+            if process.isRunning {
+                process.terminate()
+            }
         }
+
+        if Task.isCancelled { throw CancellationError() }
+        return result
     }
+}
+
+private final class ProcessBox: @unchecked Sendable {
+    let process = Process()
 }
 
 private final class ResumeGuard: @unchecked Sendable {

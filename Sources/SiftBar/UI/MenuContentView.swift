@@ -8,10 +8,18 @@ struct MenuContentView: View {
         Text("SiftBar")
             .font(.headline)
 
-        Text("\(statusDot) \(statusText)")
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
-            .accessibilityLabel(statusText)
+        HStack(spacing: 6) {
+            Image(systemName: "circle.fill")
+                .font(.system(size: 8))
+                .foregroundStyle(statusTint)
+                .accessibilityHidden(true)
+
+            Text(statusText)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(statusText)
 
         Divider()
 
@@ -43,14 +51,14 @@ struct MenuContentView: View {
         .keyboardShortcut("q")
     }
 
-    private var statusDot: String {
-        if appState.isScanning || appState.isApplying { return "🟠" }
-        guard let report = appState.report else { return "⚪️" }
+    private var statusTint: Color {
+        if appState.isScanning || appState.isApplying { return .orange }
+        guard let report = appState.report else { return .secondary }
 
         let findings = report.items.filter { !$0.isInformational }
-        if findings.contains(where: { $0.risk == .dangerous }) { return "🔴" }
-        if findings.contains(where: { $0.risk == .caution }) { return "🟠" }
-        return "🟢"
+        if findings.contains(where: { $0.risk == .dangerous }) { return .red }
+        if findings.contains(where: { $0.risk == .caution }) { return .orange }
+        return .green
     }
 
     private var statusText: String {

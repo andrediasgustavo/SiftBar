@@ -11,16 +11,19 @@ struct SiftBarApp: App {
             MenuContentView()
                 .environmentObject(appState)
         } label: {
-            Label(menuBarTitle, systemImage: menuBarSymbol)
+            Image(systemName: menuBarSymbol)
+                .accessibilityLabel(menuBarTitle)
         }
     }
 
+    /// Accessibility label for the icon-only menu bar item. Counts live in the
+    /// popover so the item does not steal menu bar space from other apps.
     private var menuBarTitle: String {
         guard let report = appState.report else { return "SiftBar" }
 
         let findings = report.items.filter { !$0.isInformational }
         let review = findings.filter { $0.risk != .safe }.count
-        return review == 0 ? "SiftBar · all clear" : "SiftBar · \(review) need review"
+        return review == 0 ? "SiftBar, all clear" : "SiftBar, \(review) need review"
     }
 
     private var menuBarSymbol: String {
@@ -45,7 +48,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         //   open SiftBar.app --args --show-dashboard
         //   open SiftBar.app --args --show-dashboard --analyze
         //   open SiftBar.app --args --demo [--demo-access|--demo-result]
+        //   open SiftBar.app --args --demo --demo-page <page> [--demo-details]
         let arguments = CommandLine.arguments
+
         if arguments.contains("--demo") {
             AppState.shared.loadDemoReport()
             DashboardWindowController.shared.show(state: AppState.shared)

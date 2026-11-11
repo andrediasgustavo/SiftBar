@@ -47,3 +47,4 @@ __pycache__/
 # Local and internal docs
 CONTEXT.md
 PLAN.md
+docs/proposals/

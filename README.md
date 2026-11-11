@@ -44,7 +44,8 @@ exact command SiftBar will run. Nothing happens without your confirmation.
 ## How it works
 
 1. **Analyze** — a read-only scan of memory, processes, startup items, services,
-   disk, caches, and leftovers.
+   disk, caches, and leftovers. The scan shows its four steps with live
+   progress and can be stopped at any time.
 2. **Review** — findings are sorted by risk, so red and orange items come first.
    Search, filter by risk, and open a folder in Finder from its row.
 3. **Apply** — select the items you want, review the exact commands, and
@@ -210,7 +211,8 @@ SiftBar never asks for administrator rights or runs `sudo`.
 
 1. Click the filter icon in the menu bar.
 2. Choose **Open Dashboard** (`⌘D`) or **Run Analysis** (`⌘R`).
-3. Press **Analyze** and review the findings. The scan is read-only.
+3. Press **Analyze**. The scan shows its progress and can be stopped; it is
+   read-only.
 4. Filter by risk, search across titles/details/evidence, or use the folder
    button to reveal a path in Finder.
 5. Grouped processes show a chevron; expand the row to quit a specific PID.

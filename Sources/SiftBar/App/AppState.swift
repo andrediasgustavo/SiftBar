@@ -1,6 +1,17 @@
 import Foundation
 import SwiftUI
 
+/// How an interactive scan is presented. Quick refreshes and background map
+/// refreshes stay on the compact header indicator.
+enum ScanPresentation: Equatable {
+    case none
+    case workspace
+    case banner
+    /// Thin progress line used by the background map refresh: feedback without
+    /// dimming or disabling the list.
+    case slim
+}
+
 @MainActor
 final class AppState: ObservableObject {
     static let shared = AppState()
@@ -9,6 +20,8 @@ final class AppState: ObservableObject {
     @Published private(set) var locksInteraction = false
     @Published private(set) var isApplying = false
     @Published private(set) var status = "Ready to analyze."
+    @Published private(set) var scanPresentation: ScanPresentation = .none
+    @Published private(set) var scanProgress: ScanProgress?
     @Published private(set) var report: ScanReport?
     @Published private(set) var errorMessage: String?
     @Published private(set) var lastDuration: TimeInterval?
@@ -20,6 +33,11 @@ final class AppState: ObservableObject {
     private let onboardingKey = "SiftBar.hasSeenAccessOnboarding"
     private var demoMode = false
     private var scanInFlight = false
+    private var activeScanTask: Task<ScanReport, Never>?
+    /// True when the report is being refreshed after a confirmed action
+    /// batch. The status line must not claim "nothing has been changed"
+    /// in that case.
+    private var isPostActionRefresh = false
     /// Paths removed by confirmed actions, with the removal time. A scan that
     /// started before the Trash move finished (or a ⌘R fired mid-batch) would
     /// otherwise bring the stale row back with a brand-new ID. Entries expire
@@ -40,6 +58,7 @@ final class AppState: ObservableObject {
     }
 
     func analyze() async {
+        isPostActionRefresh = false
         await performScan(quick: false, locksUI: true)
     }
 
@@ -48,6 +67,7 @@ final class AppState: ObservableObject {
     /// in a couple of seconds; the previous map rows are kept until the
     /// background pass replaces them.
     func refreshQuickly() async {
+        isPostActionRefresh = true
         await performScan(quick: true, locksUI: true)
     }
 
@@ -67,8 +87,28 @@ final class AppState: ObservableObject {
         isScanning = true
         locksInteraction = locksUI
 
-        if quick {
-            status = "Refreshing after your changes…"
+        // The full workspace is for scans without data; with a previous report
+        // the banner keeps the results visible. Post-action quick refreshes
+        // show the banner too (the user just changed something and expects
+        // feedback), and the background map refresh uses a thin line so the
+        // list stays usable.
+        let presentation: ScanPresentation
+        if locksUI {
+            presentation = report == nil ? .workspace : .banner
+        } else if isPostActionRefresh && report != nil {
+            presentation = .slim
+        } else {
+            presentation = .none
+        }
+        scanPresentation = presentation
+        scanProgress = presentation == .none
+            ? nil
+            : ScanProgress(step: 1, fraction: 0.02, message: "Reading system information")
+
+        if isPostActionRefresh {
+            status = quick
+                ? "Updating after your changes…"
+                : "Refreshing the space map…"
         } else if locksUI {
             status = "Scanning memory, processes, startup items, services, disk, caches and leftovers..."
         } else {
@@ -79,13 +119,39 @@ final class AppState: ObservableObject {
             scanInFlight = false
             isScanning = false
             locksInteraction = false
+            scanPresentation = .none
+            scanProgress = nil
+            activeScanTask = nil
+        }
+
+        var progressHandler: (@Sendable (ScanProgress) -> Void)?
+        if presentation != .none {
+            progressHandler = { [weak self] progress in
+                DispatchQueue.main.async {
+                    guard let self, self.scanPresentation != .none else { return }
+                    self.scanProgress = progress
+                }
+            }
         }
 
         let startedAt = Date()
-        var result = await ScanCoordinator.run(
-            includeProtectedFolders: includesProtectedFolders,
-            includeSlowCollectors: !quick
-        )
+        let task = Task {
+            await ScanCoordinator.run(
+                includeProtectedFolders: includesProtectedFolders,
+                includeSlowCollectors: !quick,
+                progress: progressHandler
+            )
+        }
+        activeScanTask = task
+        var result = await task.value
+        let cancelled = task.isCancelled
+        activeScanTask = nil
+
+        if cancelled {
+            status = "Analysis stopped."
+            return
+        }
+
         if quick, let current = report {
             result = result.mergingSlowItems(from: current)
         }
@@ -94,11 +160,28 @@ final class AppState: ObservableObject {
         report = result
         let duration = Date().timeIntervalSince(startedAt)
         lastDuration = duration
-        status = String(
-            format: "Found %d items in %.1fs. Nothing has been changed.",
-            result.items.count,
-            duration
-        )
+
+        if isPostActionRefresh {
+            // Never say "nothing has been changed" right after the user
+            // moved items to the Trash; the result card already reports it.
+            status = String(
+                format: "Updated in %.1fs · %d items found",
+                duration,
+                result.items.count
+            )
+        } else {
+            status = String(
+                format: "Found %d items in %.1fs. Nothing has been changed.",
+                result.items.count,
+                duration
+            )
+        }
+    }
+
+    /// Cancels the running scan. The previous report (if any) is kept and the
+    /// workspace/banner closes immediately.
+    func cancelScan() {
+        activeScanTask?.cancel()
     }
 
     /// Marks the start/end of a confirmed action batch. While applying, new

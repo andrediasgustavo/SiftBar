@@ -9,6 +9,8 @@ final class ReviewActionModel: ObservableObject {
     @Published private(set) var isRunning = false
     @Published private(set) var reports: [ActionReport] = []
     @Published private(set) var pending: [ScanItem] = []
+    @Published private(set) var failedItems: [ScanItem] = []
+    @Published var showsFailureDetails = false
 
     private let history: HistoryStore
 
@@ -76,6 +78,10 @@ final class ReviewActionModel: ObservableObject {
             results.append(await ActionExecutor.perform(item))
         }
 
+        let failedItems = zip(results, items).compactMap { report, item in
+            report.success ? nil : item
+        }
+
         let entries = zip(results, items).map { report, item in
             HistoryEntry(item: item, report: report)
         }
@@ -87,9 +93,19 @@ final class ReviewActionModel: ObservableObject {
         ))
 
         reports = results
+        self.failedItems = failedItems
         isRunning = false
         selected.removeAll()
         pending = []
+        showsFailureDetails = false
+    }
+
+    /// Opens the confirmation sheet again with only the items that failed, so
+    /// a retry is still an explicit, reviewed action.
+    func beginRetryOfFailures() {
+        guard !isRunning, !failedItems.isEmpty else { return }
+        pending = failedItems
+        isConfirming = true
     }
 
     var changedCount: Int {
@@ -125,6 +141,8 @@ final class ReviewActionModel: ObservableObject {
 
     func dismissSummary() {
         reports = []
+        failedItems = []
+        showsFailureDetails = false
     }
 
     /// README/demo hook: show a realistic success card without touching disk.
@@ -133,6 +151,7 @@ final class ReviewActionModel: ObservableObject {
         reports = caches.prefix(2).map { item in
             ActionReport(item: item, success: true, message: "Moved to Trash")
         }
+        failedItems = []
     }
 }
 

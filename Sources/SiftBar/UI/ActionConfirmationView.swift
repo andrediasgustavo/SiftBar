@@ -85,10 +85,12 @@ struct ActionConfirmationView: View {
             Button("Cancel", action: onCancel)
                 .keyboardShortcut(.cancelAction)
 
-            Button(actionTitle, action: onConfirm)
+            // Destructive actions must not be the default button: HIG asks for
+            // the primary role to stay on a non-destructive choice so Return
+            // cannot move data to the Trash by accident.
+            Button(actionTitle, role: .destructive, action: onConfirm)
                 .buttonStyle(.borderedProminent)
                 .tint(.red)
-                .keyboardShortcut(.defaultAction)
                 .disabled(isRunning)
         }
     }
@@ -130,7 +132,7 @@ struct ActionConfirmationView: View {
 
     private var actionTitle: String {
         guard items.count == 1, let item = items.first else {
-            return "Apply \(items.count) Actions"
+            return ActionExecutor.confirmTitle(for: items)
         }
 
         return ActionExecutor.verb(for: item.action)

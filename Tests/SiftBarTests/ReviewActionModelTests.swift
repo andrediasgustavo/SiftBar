@@ -95,6 +95,17 @@ final class ReviewActionModelTests: XCTestCase {
 
         XCTAssertEqual(model.succeededIDs.count, 2)
         XCTAssertEqual(model.succeededIDs.count, model.reports.filter(\.success).count)
+        XCTAssertTrue(model.failedItems.isEmpty)
+    }
+
+    @MainActor
+    func testRetryWithoutFailuresDoesNothing() async {
+        let model = ReviewActionModel()
+
+        model.beginRetryOfFailures()
+
+        XCTAssertFalse(model.isConfirming)
+        XCTAssertTrue(model.pending.isEmpty)
     }
 
     // MARK: - Helpers

@@ -21,76 +21,23 @@ struct ItemRow: View {
     @StateObject private var hover = HoverModel()
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: 10) {
             selectionControl
-                .frame(width: 16, alignment: .leading)
-
-            riskColumn
-                .frame(width: 72, alignment: .leading)
+                .frame(width: 18, alignment: .leading)
+                .padding(.top, 1)
 
             VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        if hasChildren {
-                            Button(action: onToggleExpanded) {
-                                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                                    .font(.system(size: 9, weight: .semibold))
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 12, height: 16)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .help(isExpanded ? "Hide individual processes" : "Show individual processes")
-                            .accessibilityLabel(isExpanded ? "Collapse processes" : "Expand processes")
-                        }
-
-                        if showsCategory {
-                            Image(systemName: item.category.symbol)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .accessibilityLabel(item.category.title)
-                        }
-
-                        Text(item.title)
-                            .font(isChild ? .callout.weight(.medium) : .body.weight(.medium))
-                            .lineLimit(1)
-                    }
-
-                    Spacer(minLength: 8)
-
-                    Text(item.impactLabel)
-                        .font(.callout.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .frame(minWidth: 70, alignment: .trailing)
-
-                    if let quickActionTitle, let onQuickAction, !isChild {
-                        Button(quickActionTitle, action: onQuickAction)
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                            .disabled(controlsDisabled)
-                    }
-                }
-
-                Text(item.detail)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if let warning = item.warning {
-                    Label(warning, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                evidence
+                titleLine
+                detailLine
+                warningLine
+                evidenceLine
             }
         }
         .padding(.vertical, 9)
         .padding(.horizontal, 10)
         .padding(.leading, isChild ? 26 : 0)
         .background(rowBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .overlay(alignment: .leading) { riskRail }
         .contentShape(Rectangle())
         .onHover { hover.isHovered = $0 }
         .contextMenu {
@@ -109,6 +56,128 @@ struct ItemRow: View {
         }
     }
 
+    // MARK: - Lines
+
+    private var titleLine: some View {
+        HStack(alignment: .center, spacing: 6) {
+            if hasChildren {
+                Button(action: onToggleExpanded) {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(isExpanded ? "Hide individual processes" : "Show individual processes")
+                .accessibilityLabel(isExpanded ? "Collapse processes" : "Expand processes")
+            }
+
+            if showsCategory {
+                Image(systemName: item.category.symbol)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(item.category.title)
+            }
+
+            Text(item.title)
+                .font(isChild ? .callout.weight(.medium) : .body.weight(.medium))
+                .lineLimit(1)
+
+            Spacer(minLength: 8)
+
+            if let quickActionTitle, let onQuickAction, !isChild {
+                Button(quickActionTitle, action: onQuickAction)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(controlsDisabled)
+            }
+
+            Text(item.impactLabel)
+                .font(.callout.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(minWidth: 70, alignment: .trailing)
+        }
+    }
+
+    @ViewBuilder
+    private var detailLine: some View {
+        if showsDetail {
+            Text(item.detail)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .help(item.detail)
+        }
+    }
+
+    /// Cache rows all share the same boilerplate sentence, which is already in
+    /// the page description. Hide only that sentence so a future item-specific
+    /// detail still shows up.
+    private var showsDetail: Bool {
+        if item.category == .caches && item.detail.hasPrefix("Recreatable cache data.") {
+            return false
+        }
+        return !item.detail.isEmpty
+    }
+
+    @ViewBuilder
+    private var warningLine: some View {
+        if let warning = item.warning {
+            Label(warning, systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var evidenceLine: some View {
+        HStack(spacing: 6) {
+            Image(systemName: item.revealURL == nil ? "terminal" : "folder")
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(.secondary)
+
+            Text(item.displayEvidence)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+                .help(item.evidence)
+
+            Spacer(minLength: 8)
+
+            // Keep the risk word visible: the rail is a scanning aid, not the
+            // only carrier of risk. Screen readers get it in the checkbox label.
+            Text(item.isProtected ? "Protected" : (item.isInformational ? "Info" : item.risk.label))
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(item.risk == .dangerous ? Color(nsColor: .systemRed) : Color.secondary)
+                .lineLimit(1)
+
+            if let url = item.revealURL {
+                Button {
+                    FinderReveal.show(url)
+                } label: {
+                    Image(systemName: "folder")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 20)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .opacity(hover.isHovered ? 1 : 0)
+                .allowsHitTesting(hover.isHovered)
+                .help("Show in Finder")
+                .accessibilityLabel("Show in Finder")
+            }
+        }
+        .help("Source and command")
+    }
+
+    // MARK: - Selection
+
     @ViewBuilder
     private var selectionControl: some View {
         if canSelect {
@@ -116,18 +185,31 @@ struct ItemRow: View {
                 Image(systemName: isSelected ? "checkmark.square.fill" : "square")
                     .font(.system(size: 14))
                     .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .disabled(controlsDisabled)
-            .accessibilityLabel(isSelected ? "Deselect \(item.title)" : "Select \(item.title)")
+            .accessibilityLabel(
+                isSelected
+                    ? "Deselect \(item.title), \(accessibilityRisk)"
+                    : "Select \(item.title), \(accessibilityRisk)"
+            )
             .help(isSelected ? "Deselect" : "Select")
         } else {
             Image(systemName: item.requiresAdmin || item.isProtected ? "lock.fill" : "minus")
                 .font(.system(size: 10))
                 .foregroundStyle(.tertiary)
+                .frame(width: 18, height: 18)
                 .help(helpText)
                 .accessibilityLabel(accessibilityText)
         }
+    }
+
+    private var accessibilityRisk: String {
+        if item.isProtected { return "protected" }
+        if item.isInformational { return "informational" }
+        return item.risk.label.lowercased()
     }
 
     private var helpText: String {
@@ -145,71 +227,27 @@ struct ItemRow: View {
         return item.requiresAdmin ? "Requires administrator rights" : "Not changeable"
     }
 
-    /// A fixed-width risk column keeps every title on the same vertical line.
-    private var riskColumn: some View {
-        HStack(spacing: 6) {
-            if item.isProtected {
-                Image(systemName: "lock.shield")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-
-                Text("Protected")
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            } else if item.isInformational {
-                Circle()
-                    .fill(Color.secondary.opacity(0.45))
-                    .frame(width: 7, height: 7)
-
-                Text("Info")
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            } else {
-                RiskDot(risk: item.risk)
-
-                Text(item.risk.label)
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(item.risk == .dangerous ? Color.primary : Color.secondary)
-                    .lineLimit(1)
-            }
-        }
+    /// The risk rail is the row's at-a-glance signal. It is decorative: the
+    /// risk word stays in the metadata line and in the selection label, so
+    /// nothing is conveyed by color alone.
+    private var riskRail: some View {
+        RoundedRectangle(cornerRadius: 2, style: .continuous)
+            .fill(railColor)
+            .frame(width: 3)
+            .padding(.vertical, 7)
+            .accessibilityHidden(true)
     }
 
-    /// The product promise is full transparency: the source stays readable and
-    /// copyable rather than being decorative fine print.
-    private var evidence: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "terminal")
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(.tertiary)
-
-            Text(item.evidence)
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .textSelection(.enabled)
-
-            if let url = item.revealURL {
-                Spacer(minLength: 8)
-
-                Button {
-                    FinderReveal.show(url)
-                } label: {
-                    Image(systemName: "folder")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 20, height: 20)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("Show in Finder")
-                .accessibilityLabel("Show in Finder")
-            }
+    private var railColor: Color {
+        if item.isProtected || item.isInformational {
+            return Color(nsColor: .tertiaryLabelColor)
         }
-        .help("Source and command")
+
+        switch item.risk {
+        case .safe: return Color(nsColor: .systemGreen)
+        case .caution: return Color(nsColor: .systemOrange)
+        case .dangerous: return Color(nsColor: .systemRed)
+        }
     }
 
     private var rowBackground: Color {
@@ -224,27 +262,24 @@ struct ItemRow: View {
     }
 }
 
+extension ScanItem {
+    /// Human-readable evidence for the row. Trash actions expose their exact
+    /// path (with the home folder abbreviated); other rows keep their command
+    /// but still abbreviate paths. The full command remains in the
+    /// confirmation sheet and in "Copy Evidence".
+    var displayEvidence: String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let raw = action.targetPath ?? evidence
+
+        guard !home.isEmpty, raw.hasPrefix(home + "/") else { return raw }
+        return "~" + String(raw.dropFirst(home.count))
+    }
+}
+
 /// `@State` is a macro in recent SwiftUI SDKs; using `@StateObject` keeps the
 /// direct-`swiftc` build working with Command Line Tools only.
 private final class HoverModel: ObservableObject {
     @Published var isHovered = false
-}
-
-private struct RiskDot: View {
-    let risk: Risk
-
-    var body: some View {
-        Group {
-            if risk == .safe {
-                Circle()
-                    .strokeBorder(Color(nsColor: .systemGreen).opacity(0.8), lineWidth: 1.2)
-            } else {
-                Circle()
-                    .fill(risk.tint)
-            }
-        }
-        .frame(width: 7, height: 7)
-    }
 }
 
 /// Opens a folder in Finder, or reveals and selects a file.

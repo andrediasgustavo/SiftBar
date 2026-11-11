@@ -96,20 +96,54 @@ enum ActionExecutor {
     }
 
     static func title(for items: [ScanItem]) -> String {
-        guard items.count == 1, let item = items.first else {
-            return "Apply \(items.count) Actions…"
+        guard !items.isEmpty else { return "Apply Actions…" }
+
+        if items.count == 1, let item = items.first {
+            switch item.action {
+            case .none: return "No Action"
+            case .killProcess: return "Quit Process…"
+            case .removeLoginItem: return "Remove Login Item…"
+            case .disableLaunchItem: return "Disable Launch Item…"
+            case .enableLaunchItem: return "Enable Launch Item…"
+            case .stopService: return "Stop Service…"
+            case .deletePath: return "Move to Trash…"
+            case .trashLeftover: return "Move Leftover to Trash…"
+            }
         }
 
-        switch item.action {
-        case .none: return "No Action"
-        case .killProcess: return "Quit Process…"
-        case .removeLoginItem: return "Remove Login Item…"
-        case .disableLaunchItem: return "Disable Launch Item…"
-        case .enableLaunchItem: return "Enable Launch Item…"
-        case .stopService: return "Stop Service…"
-        case .deletePath: return "Move to Trash…"
-        case .trashLeftover: return "Move Leftover to Trash…"
+        return batchTitle(for: items, suffix: "…")
+    }
+
+    /// Same verb as the action bar, without the ellipsis used when a sheet
+    /// will follow. Mixed batches fall back to a neutral title.
+    static func confirmTitle(for items: [ScanItem]) -> String {
+        batchTitle(for: items, suffix: "")
+    }
+
+    private static func batchTitle(for items: [ScanItem], suffix: String) -> String {
+        let count = items.count
+        let actions = items.map(\.action)
+
+        if actions.allSatisfy({ if case .killProcess = $0 { return true }; return false }) {
+            return "Quit \(count) Processes\(suffix)"
         }
+        if actions.allSatisfy({ if case .deletePath = $0 { return true }; return false }) {
+            return "Move \(count) to Trash\(suffix)"
+        }
+        if actions.allSatisfy({ if case .trashLeftover = $0 { return true }; return false }) {
+            return "Move \(count) Leftovers to Trash\(suffix)"
+        }
+        if actions.allSatisfy({ if case .disableLaunchItem = $0 { return true }; return false }) {
+            return "Disable \(count) Launch Items\(suffix)"
+        }
+        if actions.allSatisfy({ if case .enableLaunchItem = $0 { return true }; return false }) {
+            return "Enable \(count) Launch Items\(suffix)"
+        }
+        if actions.allSatisfy({ if case .stopService = $0 { return true }; return false }) {
+            return "Stop \(count) Services\(suffix)"
+        }
+
+        return "Apply \(count) Actions\(suffix)"
     }
 
     static func sheetTitle(for items: [ScanItem]) -> String {

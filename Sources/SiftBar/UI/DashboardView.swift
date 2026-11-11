@@ -62,11 +62,30 @@ struct DashboardView: View {
             if arguments.contains("--demo-result") {
                 actions.loadDemoReports()
             }
+            if arguments.contains("--demo-refresh") {
+                // Screenshot hook: simulates the post-action refresh so the
+                // banner and the thin background line can be captured.
+                Task {
+                    await appState.refreshQuickly()
+                    await appState.refreshInBackground()
+                }
+            }
             if arguments.contains("--demo-confirmation"),
                let item = appState.report?.items.first(where: {
                    $0.category == .caches && $0.canBeChanged
                }) {
                 actions.beginConfirmation(with: [item])
+            }
+
+            // Documentation hooks: let the screenshot script open a specific
+            // page without UI automation.
+            if let index = arguments.firstIndex(of: "--demo-page"),
+               index + 1 < arguments.count,
+               let category = Self.demoCategory(named: arguments[index + 1]) {
+                page.selection = .category(category)
+            }
+            if arguments.contains("--demo-details") {
+                diskMapExpanded = true
             }
         }
         .onChange(of: page.category) { _ in
@@ -92,13 +111,11 @@ struct DashboardView: View {
                     .contentShape(Rectangle())
                     .onTapGesture { page.selection = .overview }
 
-                Section("Review") {
-                    ForEach(Self.reviewOrder, id: \.rawValue) { category in
-                        Label(category.title, systemImage: category.symbol)
-                            .badge(badge(count(of: category)))
-                            .tag(ReviewPage.category(category))
-                            .contentShape(Rectangle())
-                            .onTapGesture { page.selection = .category(category) }
+                ForEach(Self.sidebarSections) { section in
+                    Section(section.title) {
+                        ForEach(section.categories, id: \.rawValue) { category in
+                            categoryRow(category)
+                        }
                     }
                 }
             }
@@ -120,11 +137,42 @@ struct DashboardView: View {
         }
     }
 
-    /// Startup and process cleanup are the product's job, so they lead. Memory
-    /// and disk stay available as context, not as the first thing to read.
-    private static let reviewOrder: [ItemCategory] = [
-        .startup, .processes, .services, .caches, .leftovers, .memory, .disk
+    private struct SidebarSection: Identifiable {
+        let title: String
+        let categories: [ItemCategory]
+
+        var id: String { title }
+    }
+
+    /// Storage is the consolidated cleanup destination, so it sits apart from
+    /// the review queue instead of being mixed into it. Memory is context.
+    private static let sidebarSections: [SidebarSection] = [
+        SidebarSection(title: "Review", categories: [.startup, .processes, .services]),
+        SidebarSection(title: "Storage", categories: [.disk, .caches, .leftovers]),
+        SidebarSection(title: "System", categories: [.memory])
     ]
+
+    /// Demo/screenshot hook: maps `--demo-page <name>` to a sidebar page.
+    private static func demoCategory(named name: String) -> ItemCategory? {
+        switch name {
+        case "startup": return .startup
+        case "processes": return .processes
+        case "services": return .services
+        case "disk": return .disk
+        case "caches": return .caches
+        case "leftovers": return .leftovers
+        case "memory": return .memory
+        default: return nil
+        }
+    }
+
+    private func categoryRow(_ category: ItemCategory) -> some View {
+        Label(category.title, systemImage: category.symbol)
+            .badge(badge(count(of: category)))
+            .tag(ReviewPage.category(category))
+            .contentShape(Rectangle())
+            .onTapGesture { page.selection = .category(category) }
+    }
 
     private func badge(_ count: Int) -> Text? {
         count > 0 ? Text("\(count)") : nil
@@ -137,44 +185,68 @@ struct DashboardView: View {
             pageHeader
                 .padding(.horizontal, 24)
 
-            if appState.report != nil {
-                statStrip
-                    .padding(.horizontal, 24)
-                    .padding(.top, 14)
-            }
-
-            if let report = appState.report, page.category == .memory {
-                memoryCard(report)
-                    .padding(.horizontal, 24)
-                    .padding(.top, 12)
-            }
-
-            if let report = appState.report, page.category == .disk {
-                diskCard(report)
-                    .padding(.horizontal, 24)
-                    .padding(.top, 12)
-            }
-
-            if !actions.reports.isEmpty {
-                resultCard
-                    .padding(.horizontal, 24)
-                    .padding(.top, 12)
-            }
-
-            if appState.report != nil {
-                filterRow
-                    .padding(.horizontal, 24)
-
-                content
-                    .padding(.horizontal, 24)
-
-                actionBar
+            if appState.scanPresentation == .workspace {
+                ScanWorkspaceView(
+                    progress: appState.scanProgress,
+                    onStop: { appState.cancelScan() }
+                )
             } else {
-                emptyState
-                    .padding(.horizontal, 24)
-                    .padding(.top, 18)
+                if appState.scanPresentation == .slim {
+                    ScanProgressLine(progress: appState.scanProgress)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 8)
+                }
 
-                Spacer(minLength: 0)
+                if appState.report != nil {
+                    statStrip
+                        .padding(.horizontal, 24)
+                        .padding(.top, 14)
+                }
+
+                if appState.scanPresentation == .banner {
+                    ScanProgressBanner(
+                        progress: appState.scanProgress,
+                        onStop: { appState.cancelScan() }
+                    )
+                    .padding(.horizontal, 24)
+                    .padding(.top, 12)
+                }
+
+                if let report = appState.report, page.category == .memory {
+                    memoryCard(report)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 12)
+                }
+
+                if let report = appState.report, page.category == .disk {
+                    diskCard(report)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 12)
+                }
+
+                if !actions.reports.isEmpty {
+                    resultCard
+                        .padding(.horizontal, 24)
+                        .padding(.top, 12)
+                }
+
+                if appState.report != nil {
+                    filterRow
+                        .padding(.horizontal, 24)
+
+                    content
+                        .padding(.horizontal, 24)
+                        .opacity(appState.scanPresentation == .banner ? 0.45 : 1)
+                        .allowsHitTesting(appState.scanPresentation != .banner)
+
+                    actionBar
+                } else {
+                    emptyState
+                        .padding(.horizontal, 24)
+                        .padding(.top, 18)
+
+                    Spacer(minLength: 0)
+                }
             }
         }
         .padding(.top, 24)
@@ -189,7 +261,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .center, spacing: 12) {
                 Text(pageTitle)
-                    .font(.largeTitle.weight(.semibold))
+                    .font(.title2.weight(.semibold))
 
                 Spacer(minLength: 12)
 
@@ -215,9 +287,14 @@ struct DashboardView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if appState.isScanning || appState.errorMessage != nil || appState.lastDuration != nil {
+            let showsHeaderStatus = appState.errorMessage != nil
+                || appState.scanPresentation == .slim
+                || (appState.scanPresentation == .none
+                    && (appState.isScanning || appState.lastDuration != nil))
+
+            if showsHeaderStatus {
                 HStack(spacing: 5) {
-                    if appState.isScanning {
+                    if appState.isScanning && appState.scanPresentation == .none {
                         ProgressView()
                             .controlSize(.mini)
                     }
@@ -337,7 +414,7 @@ struct DashboardView: View {
 
             if index < display.count - 1 {
                 Hairline()
-                    .padding(.leading, row.isChild ? 148 : (showsCategory ? 144 : 122))
+                    .padding(.leading, row.isChild ? 56 : (showsCategory ? 66 : 48))
             }
         }
     }
@@ -763,7 +840,7 @@ struct DashboardView: View {
         case .memory:
             return memoryStats(report, metrics)
         case .caches:
-            return reclaimStats(metrics)
+            return reclaimStats(metrics, disk: report.disk)
         case .leftovers:
             return leftoverStats(metrics)
         case .processes:
@@ -792,12 +869,6 @@ struct DashboardView: View {
                 label: "Disk reclaimable",
                 tint: metrics.diskReclaimableBytes > 0 ? .green : .secondary,
                 help: "Caches and reviewed leftovers that can be moved to the Trash. Memory is not included."
-            ),
-            Stat(
-                value: formatMemory(UInt64(max(metrics.memoryReleasableBytes, 0))),
-                label: "RAM if quit",
-                tint: metrics.memoryReleasableBytes > 0 ? .primary : .secondary,
-                help: "Memory that quitting the listed apps would release. This does not free disk space."
             ),
             Stat(
                 value: format(report.disk.importantFreeBytes),
@@ -833,12 +904,6 @@ struct DashboardView: View {
                 label: "Reclaimable",
                 tint: metrics.diskReclaimableBytes > 0 ? .green : .secondary,
                 help: "Caches plus reviewed leftovers. Leftovers are app data and need your confirmation."
-            ),
-            Stat(
-                value: format(report.disk.purgeableBytes),
-                label: "Purgeable",
-                tint: .secondary,
-                help: "Space macOS can free on demand. SiftBar does not delete purgeable data."
             )
         ]
     }
@@ -862,12 +927,6 @@ struct DashboardView: View {
                 help: "Memory used by apps and processes, excluding compressed and wired memory."
             ),
             Stat(
-                value: memory.hasBreakdown ? formatMemory(memory.wiredBytes) : "—",
-                label: "Wired",
-                tint: .secondary,
-                help: "Memory the system cannot page out."
-            ),
-            Stat(
                 value: memory.hasBreakdown ? formatMemory(memory.compressedBytes) : "—",
                 label: "Compressed",
                 tint: memory.compressedBytes > 1_500_000_000 ? .orange : .secondary,
@@ -882,7 +941,7 @@ struct DashboardView: View {
         ]
     }
 
-    private func reclaimStats(_ metrics: ReviewMetrics) -> [Stat] {
+    private func reclaimStats(_ metrics: ReviewMetrics, disk: DiskStats) -> [Stat] {
         let cacheBytes = categoryItems(.caches, in: allItems)
             .compactMap(\.impactBytes)
             .reduce(0, +)
@@ -905,6 +964,12 @@ struct DashboardView: View {
                 label: "Need review",
                 tint: reviewTint(metrics),
                 help: "\(metrics.dangerous) dangerous · \(metrics.caution) caution"
+            ),
+            Stat(
+                value: format(disk.importantFreeBytes),
+                label: "Disk available",
+                tint: diskTint(disk),
+                help: "\(format(disk.importantFreeBytes)) available, matching System Settings · \(Int(disk.usedRatio * 100))% used"
             )
         ]
     }
@@ -1001,7 +1066,9 @@ struct DashboardView: View {
 
         let headline: String
         if actions.failedCount > 0 {
-            headline = "\(actions.changedCount) of \(actions.reports.count) succeeded"
+            headline = actions.changedCount == 0
+                ? "\(actions.failedCount) \(actions.failedCount == 1 ? "item" : "items") failed"
+                : "\(actions.changedCount) of \(actions.reports.count) succeeded"
         } else if actions.diskMovedBytes > 0 && actions.memoryReleasedBytes > 0 {
             headline = "\(format(actions.diskMovedBytes)) moved to Trash · \(formatMemory(UInt64(actions.memoryReleasedBytes))) RAM released"
         } else if actions.diskMovedBytes > 0 {
@@ -1019,26 +1086,71 @@ struct DashboardView: View {
             detail = "\(actions.changedCount) succeeded · \(actions.failedCount) failed"
         }
 
-        return HStack(spacing: 14) {
-            Image(systemName: symbol)
-                .font(.system(size: 26))
-                .foregroundStyle(tint)
-                .accessibilityHidden(true)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 14) {
+                Image(systemName: symbol)
+                    .font(.system(size: 26))
+                    .foregroundStyle(tint)
+                    .accessibilityHidden(true)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(headline)
-                    .font(.title3.weight(.semibold))
-                    .monospacedDigit()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(headline)
+                        .font(.title3.weight(.semibold))
+                        .monospacedDigit()
 
-                Text(detail)
+                    Text(detail)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 8)
+
+                Button("Dismiss") { actions.dismissSummary() }
+                    .buttonStyle(.link)
+            }
+            .accessibilityElement(children: .combine)
+
+            if actions.failedCount > 0 {
+                HStack(spacing: 14) {
+                    Button(actions.showsFailureDetails ? "Hide failure details" : "Show failure details") {
+                        actions.showsFailureDetails.toggle()
+                    }
+                    .buttonStyle(.link)
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+
+                    Button("Retry \(actions.failedItems.count) Failed \(actions.failedItems.count == 1 ? "Item" : "Items")…") {
+                        actions.beginRetryOfFailures()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(actions.isRunning)
+                }
+
+                if actions.showsFailureDetails {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(actions.reports.filter { !$0.success }) { report in
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(report.title)
+                                    .font(.caption.weight(.medium))
+
+                                Text(report.message)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                    }
+                    .padding(.leading, 4)
+                }
             }
 
-            Spacer(minLength: 8)
-
-            Button("Dismiss") { actions.dismissSummary() }
+            if actions.diskMovedBytes > 0 {
+                Button("Show Trash in Finder") {
+                    openTrash()
+                }
                 .buttonStyle(.link)
+                .font(.callout)
+            }
         }
         .padding(14)
         .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 10))
@@ -1046,7 +1158,6 @@ struct DashboardView: View {
             RoundedRectangle(cornerRadius: 10)
                 .strokeBorder(tint.opacity(0.30), lineWidth: 1)
         )
-        .accessibilityElement(children: .combine)
         .transition(reduceMotion ? .opacity : .scale(scale: 0.96).combined(with: .opacity))
     }
 
@@ -1080,6 +1191,15 @@ struct DashboardView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: 520, alignment: .leading)
+
+            Button {
+                Task { await appState.analyze() }
+            } label: {
+                Label(analyzeLabel, systemImage: "magnifyingglass")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(isBusy || appState.isScanning)
+            .padding(.top, 2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -1194,6 +1314,12 @@ struct DashboardView: View {
 
     private func formatMemory(_ bytes: UInt64) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory)
+    }
+
+    private func openTrash() {
+        let trash = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".Trash", isDirectory: true)
+        NSWorkspace.shared.open(trash)
     }
 
     private func confirmActions() {
@@ -1315,7 +1441,7 @@ private struct StatBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(stat.value)
-                .font(.title.weight(.semibold))
+                .font(.title3.weight(.semibold))
                 .monospacedDigit()
                 .foregroundStyle(stat.tint)
                 .lineLimit(1)
