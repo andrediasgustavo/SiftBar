@@ -28,13 +28,31 @@ xattr -cr "$SOURCE" 2>/dev/null || true
 
 echo "==> Creating $DMG"
 rm -f "$DMG"
-hdiutil create \
-    -volname "$APP_NAME" \
-    -srcfolder "$SOURCE" \
-    -ov \
-    -format UDZO \
-    -fs APFS \
-    "$IMAGE" >/dev/null
+
+# `hdiutil create` can fail transiently on CI runners ("Resource busy" or a
+# volume that is still detaching). Retry with a fresh image before failing.
+created=0
+for attempt in 1 2 3; do
+    if hdiutil create \
+        -volname "$APP_NAME" \
+        -srcfolder "$SOURCE" \
+        -ov \
+        -format UDZO \
+        -fs APFS \
+        "$IMAGE" >/dev/null; then
+        created=1
+        break
+    fi
+
+    echo "hdiutil create failed (attempt $attempt); retrying..." >&2
+    rm -f "$IMAGE"
+    sleep 2
+done
+
+if [ "$created" -ne 1 ]; then
+    echo "hdiutil create failed after 3 attempts." >&2
+    exit 1
+fi
 
 echo "==> Verifying DMG"
 hdiutil verify "$IMAGE" >/dev/null
