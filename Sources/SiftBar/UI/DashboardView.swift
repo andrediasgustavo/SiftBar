@@ -58,6 +58,7 @@ struct DashboardView: View {
         .onAppear {
             appState.presentAccessSheetIfNeeded()
 
+            #if SIFTBAR_DEMO
             let arguments = CommandLine.arguments
             if arguments.contains("--demo-result") {
                 actions.loadDemoReports()
@@ -87,6 +88,7 @@ struct DashboardView: View {
             if arguments.contains("--demo-details") {
                 diskMapExpanded = true
             }
+            #endif
         }
         .onChange(of: page.category) { _ in
             actions.clear()
@@ -152,6 +154,7 @@ struct DashboardView: View {
         SidebarSection(title: "System", categories: [.memory])
     ]
 
+    #if SIFTBAR_DEMO
     /// Demo/screenshot hook: maps `--demo-page <name>` to a sidebar page.
     private static func demoCategory(named name: String) -> ItemCategory? {
         switch name {
@@ -165,6 +168,7 @@ struct DashboardView: View {
         default: return nil
         }
     }
+    #endif
 
     private func categoryRow(_ category: ItemCategory) -> some View {
         Label(category.title, systemImage: category.symbol)
@@ -1352,75 +1356,6 @@ struct DashboardView: View {
     }
 }
 
-private struct BreakdownSegment: Identifiable {
-    let id = UUID()
-    let name: String
-    let bytes: Int64
-    let color: Color
-    let memoryUnits: Bool
-
-    init(name: String, bytes: Int64, color: Color, memoryUnits: Bool = false) {
-        self.name = name
-        self.bytes = bytes
-        self.color = color
-        self.memoryUnits = memoryUnits
-    }
-
-    var label: String {
-        ByteCountFormatter.string(
-            fromByteCount: bytes,
-            countStyle: memoryUnits ? .memory : .file
-        )
-    }
-}
-
-private struct BreakdownBar: View {
-    let segments: [BreakdownSegment]
-    let total: Int64
-
-    var body: some View {
-        GeometryReader { geometry in
-            HStack(spacing: 1) {
-                ForEach(segments.filter { $0.bytes > 0 }) { segment in
-                    Rectangle()
-                        .fill(segment.color)
-                        .frame(width: width(for: segment, in: geometry.size.width))
-                }
-            }
-        }
-        .frame(height: 10)
-        .background(Color.primary.opacity(0.06))
-        .clipShape(Capsule())
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(segments.map { "\($0.name) \($0.label)" }.joined(separator: ", "))
-    }
-
-    private func width(for segment: BreakdownSegment, in available: CGFloat) -> CGFloat {
-        guard total > 0 else { return 0 }
-        return max(0, available * CGFloat(segment.bytes) / CGFloat(total))
-    }
-}
-
-private struct BreakdownLegend: View {
-    let segment: BreakdownSegment
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Circle()
-                .fill(segment.color)
-                .frame(width: 7, height: 7)
-
-            Text(segment.name)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Text(segment.label)
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.primary)
-        }
-    }
-}
-
 private struct DisplayRow: Identifiable {
     let item: ScanItem
     let isChild: Bool
@@ -1428,94 +1363,10 @@ private struct DisplayRow: Identifiable {
     var id: UUID { item.id }
 }
 
-private struct Stat {
-    let value: String
-    let label: String
-    let tint: Color
-    let help: String
-}
-
-private struct StatBlock: View {
-    let stat: Stat
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(stat.value)
-                .font(.title3.weight(.semibold))
-                .monospacedDigit()
-                .foregroundStyle(stat.tint)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-
-            Text(stat.label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .help(stat.help)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(stat.label): \(stat.value). \(stat.help)")
-    }
-}
-
 private struct Hairline: View {
     var body: some View {
         Rectangle()
             .fill(Color(nsColor: .separatorColor))
             .frame(height: 1)
-    }
-}
-
-/// Native search field: gives the standard magnifier, clear button, focus ring
-/// and Escape behavior that a styled `TextField` only imitates.
-private struct SearchField: NSViewRepresentable {
-    @Binding var text: String
-    let placeholder: String
-    let focusToken: Int
-
-    func makeNSView(context: Context) -> NSSearchField {
-        let field = NSSearchField()
-        field.placeholderString = placeholder
-        field.controlSize = .regular
-        field.sendsSearchStringImmediately = true
-        field.delegate = context.coordinator
-        field.setAccessibilityLabel(placeholder)
-        context.coordinator.lastFocusToken = focusToken
-        return field
-    }
-
-    func updateNSView(_ field: NSSearchField, context: Context) {
-        context.coordinator.text = $text
-
-        if field.stringValue != text {
-            field.stringValue = text
-        }
-
-        if context.coordinator.lastFocusToken != focusToken {
-            context.coordinator.lastFocusToken = focusToken
-
-            DispatchQueue.main.async {
-                field.window?.makeFirstResponder(field)
-            }
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text)
-    }
-
-    final class Coordinator: NSObject, NSSearchFieldDelegate {
-        var text: Binding<String>
-        var lastFocusToken = 0
-
-        init(text: Binding<String>) {
-            self.text = text
-        }
-
-        func controlTextDidChange(_ notification: Notification) {
-            guard let field = notification.object as? NSSearchField else { return }
-            text.wrappedValue = field.stringValue
-        }
     }
 }
