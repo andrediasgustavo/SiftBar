@@ -245,11 +245,8 @@ struct DashboardView: View {
 
                     actionBar
                 } else {
-                    emptyState
+                    firstRunView
                         .padding(.horizontal, 24)
-                        .padding(.top, 18)
-
-                    Spacer(minLength: 0)
                 }
             }
         }
@@ -277,13 +274,17 @@ struct DashboardView: View {
                 .buttonStyle(.bordered)
                 .help("Show action history (⌘Y)")
 
-                Button {
-                    Task { await appState.analyze() }
-                } label: {
-                    Label(analyzeLabel, systemImage: "magnifyingglass")
+                // The first-run screen owns the only primary action while no
+                // report exists; showing both would duplicate the button.
+                if appState.report != nil {
+                    Button {
+                        Task { await appState.analyze() }
+                    } label: {
+                        Label(analyzeLabel, systemImage: "magnifyingglass")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isBusy || appState.isScanning)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(isBusy || appState.isScanning)
             }
 
             Text(pageDescription)
@@ -374,10 +375,7 @@ struct DashboardView: View {
                 itemList(items)
             }
         } else {
-            emptyState
-                .padding(.top, 18)
-
-            Spacer(minLength: 0)
+            firstRunView
         }
     }
 
@@ -1185,27 +1183,13 @@ struct DashboardView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("No scan yet")
-                .font(.title3.weight(.semibold))
-
-            Text("Run Analyze to inspect memory, processes, startup items, services, disk, caches and leftovers. Nothing is modified.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: 520, alignment: .leading)
-
-            Button {
-                Task { await appState.analyze() }
-            } label: {
-                Label(analyzeLabel, systemImage: "magnifyingglass")
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(isBusy || appState.isScanning)
-            .padding(.top, 2)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    private var firstRunView: some View {
+        FirstRunView(
+            includesProtectedFolders: appState.includesProtectedFolders,
+            isBusy: isBusy || appState.isScanning,
+            onAnalyze: { Task { await appState.analyze() } },
+            onGrantAccess: { appState.presentAccessSheet() }
+        )
     }
 
     // MARK: - Copy
