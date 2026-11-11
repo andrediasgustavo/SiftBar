@@ -63,7 +63,6 @@ enum ItemCategory: String, Codable, CaseIterable, Hashable, Sendable {
 enum ItemAction: Sendable, Equatable {
     case none
     case killProcess(pid: Int32, name: String)
-    case removeLoginItem(name: String)
     case disableLaunchItem(label: String)
     case enableLaunchItem(label: String)
     case stopService(name: String)
@@ -79,7 +78,7 @@ enum ItemAction: Sendable, Equatable {
         switch self {
         case .deletePath(let path, _), .trashLeftover(let path, _):
             return path
-        case .none, .killProcess, .removeLoginItem, .disableLaunchItem,
+        case .none, .killProcess, .disableLaunchItem,
             .enableLaunchItem, .stopService:
             return nil
         }
@@ -163,7 +162,7 @@ struct ScanItem: Identifiable, Equatable, Sendable {
             return .disk
         case .killProcess:
             return .memory
-        case .none, .removeLoginItem, .disableLaunchItem, .enableLaunchItem, .stopService:
+        case .none, .disableLaunchItem, .enableLaunchItem, .stopService:
             return nil
         }
     }
@@ -314,6 +313,13 @@ struct ScanReport: Sendable {
     let items: [ScanItem]
     let memory: MemoryStats
     let disk: DiskStats
+
+    /// A healthy Mac always reports memory and disk totals. Both zero means
+    /// the probes failed outright (for example because the commands could not
+    /// be launched) and the empty report should be presented as an error.
+    var failedToReadSystem: Bool {
+        memory.totalBytes == 0 && disk.totalBytes == 0
+    }
 
     /// Drops succeeded items without waiting for the next full scan. The same
     /// item backs every category view (Disk shows caches + leftovers), so

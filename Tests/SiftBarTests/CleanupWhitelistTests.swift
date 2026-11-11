@@ -74,6 +74,54 @@ final class CleanupWhitelistTests: XCTestCase {
         ))
     }
 
+    // MARK: - Final Trash gate (TOCTOU hardening)
+
+    func testSafeToTrashAcceptsARealDirectoryInsideTheCachesRoot() throws {
+        let home = try makeHome()
+        let folder = home
+            .appendingPathComponent("Library/Caches/ExampleCache", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+
+        XCTAssertTrue(CleanupWhitelist.isSafeToTrash(folder.path, home: home.path))
+    }
+
+    func testSafeToTrashRejectsSymlinksEvenWhenTheyResolveInsideTheRoot() throws {
+        let home = try makeHome()
+        let caches = home.appendingPathComponent("Library/Caches", isDirectory: true)
+        let target = caches.appendingPathComponent("Target", isDirectory: true)
+        let link = caches.appendingPathComponent("Link", isDirectory: true)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+
+        // The resolved path is inside the root, so only the lstat-style check
+        // can reject it.
+        XCTAssertTrue(CleanupWhitelist.allows(link.path, home: home.path))
+        XCTAssertFalse(CleanupWhitelist.isSafeToTrash(link.path, home: home.path))
+    }
+
+    func testSafeToTrashRejectsMissingAndOutsidePaths() throws {
+        let home = try makeHome()
+
+        XCTAssertFalse(CleanupWhitelist.isSafeToTrash(
+            home.appendingPathComponent("Library/Caches/Missing").path,
+            home: home.path
+        ))
+        XCTAssertFalse(CleanupWhitelist.isSafeToTrash("/tmp/outside-siftbar", home: home.path))
+    }
+
+    func testSafeLeftoverToTrashRejectsSymlinks() throws {
+        let home = try makeHome()
+        let support = home.appendingPathComponent("Library/Application Support", isDirectory: true)
+        let target = support.appendingPathComponent("Target", isDirectory: true)
+        let link = support.appendingPathComponent("Link", isDirectory: true)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+
+        XCTAssertTrue(CleanupWhitelist.allowsLeftover(link.path, home: home.path))
+        XCTAssertFalse(CleanupWhitelist.isSafeLeftoverToTrash(link.path, home: home.path))
+        XCTAssertTrue(CleanupWhitelist.isSafeLeftoverToTrash(target.path, home: home.path))
+    }
+
     // MARK: - Leftovers
 
     func testAllowsTopLevelApplicationSupportFolder() throws {

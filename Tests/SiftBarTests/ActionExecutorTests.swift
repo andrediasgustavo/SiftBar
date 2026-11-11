@@ -278,6 +278,65 @@ final class ActionExecutorTests: XCTestCase {
         XCTAssertEqual(report.reclaimedBytes, 0)
     }
 
+    func testProcessNameMatchesTheCurrentCommand() {
+        XCTAssertTrue(ActionExecutor.processStillMatches(
+            command: "/Applications/Example.app/Contents/MacOS/Example",
+            name: "Example"
+        ))
+        // Group rows store the bundle name, not the executable name.
+        XCTAssertTrue(ActionExecutor.processStillMatches(
+            command: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome Helper (GPU)",
+            name: "Google Chrome.app"
+        ))
+        XCTAssertTrue(ActionExecutor.processStillMatches(command: "/bin/sleep", name: "SLEEP"))
+        XCTAssertFalse(ActionExecutor.processStillMatches(command: "/bin/sleep", name: "Finder"))
+        XCTAssertFalse(ActionExecutor.processStillMatches(command: "", name: "Finder"))
+        XCTAssertFalse(ActionExecutor.processStillMatches(command: "/bin/sleep", name: ""))
+    }
+
+    func testKillProcessVerifiesThePidStillBelongsToTheProcess() async throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        process.arguments = ["30"]
+        try process.run()
+        addTeardownBlock {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+
+        // Give `ps` a moment to see the new process.
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        let report = await ActionExecutor.perform(
+            item(action: .killProcess(pid: process.processIdentifier, name: "sleep"))
+        )
+
+        XCTAssertTrue(report.success, report.message)
+    }
+
+    func testKillProcessRefusesWhenThePidBelongsToAnotherProcess() async throws {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        process.arguments = ["30"]
+        try process.run()
+        addTeardownBlock {
+            if process.isRunning {
+                process.terminate()
+            }
+        }
+
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        let report = await ActionExecutor.perform(
+            item(action: .killProcess(pid: process.processIdentifier, name: "Finder"))
+        )
+
+        XCTAssertFalse(report.success)
+        XCTAssertTrue(report.message.contains("different process"))
+        XCTAssertTrue(process.isRunning)
+    }
+
     // MARK: - Helpers
 
     private func item(

@@ -74,4 +74,45 @@ enum CleanupWhitelist {
             return candidate == resolvedRoot || candidate.hasPrefix(resolvedRoot + "/")
         }
     }
+
+    /// Final gate run right before moving to the Trash. It re-checks the
+    /// whitelist and refuses symlinks: `attributesOfItem` reports the link
+    /// itself (lstat semantics), it does not follow it. `trashItem` would move
+    /// a swapped symlink instead of its target, but refusing is clearer and
+    /// turns a silent surprise into an explicit failure.
+    static func isSafeToTrash(
+        _ path: String,
+        home: String = FileManager.default.homeDirectoryForCurrentUser.path
+    ) -> Bool {
+        guard allows(path, home: home) else { return false }
+        return isNotSymbolicLink(path)
+    }
+
+    static func isSafeLeftoverToTrash(
+        _ path: String,
+        home: String = FileManager.default.homeDirectoryForCurrentUser.path
+    ) -> Bool {
+        guard allowsLeftover(path, home: home) else { return false }
+        return isNotSymbolicLink(path)
+    }
+
+    private static func isNotSymbolicLink(_ path: String) -> Bool {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+              let type = attributes[.type] as? FileAttributeType else {
+            return false
+        }
+        return type != .typeSymbolicLink
+    }
+}
+
+/// Errors raised by the final cleanup checks. The message is shown to the user.
+enum CleanupError: LocalizedError {
+    case refused(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .refused(let message):
+            return message
+        }
+    }
 }

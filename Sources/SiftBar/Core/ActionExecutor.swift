@@ -38,9 +38,6 @@ enum ActionExecutor {
         case .killProcess(let pid, let name):
             return "kill -TERM \(pid)    # \(name)"
 
-        case .removeLoginItem(let name):
-            return "Remove login item: \(name)"
-
         case .disableLaunchItem(let label):
             let domain = "gui/\(getuid())"
             return "launchctl bootout \(domain)/\(label)\nlaunchctl disable \(domain)/\(label)"
@@ -86,7 +83,6 @@ enum ActionExecutor {
         switch action {
         case .none: return "Change"
         case .killProcess: return "Quit"
-        case .removeLoginItem: return "Remove"
         case .disableLaunchItem: return "Disable"
         case .enableLaunchItem: return "Enable"
         case .stopService: return "Stop"
@@ -102,7 +98,6 @@ enum ActionExecutor {
             switch item.action {
             case .none: return "No Action"
             case .killProcess: return "Quit Process…"
-            case .removeLoginItem: return "Remove Login Item…"
             case .disableLaunchItem: return "Disable Launch Item…"
             case .enableLaunchItem: return "Enable Launch Item…"
             case .stopService: return "Stop Service…"
@@ -156,6 +151,40 @@ enum ActionExecutor {
             return ActionReport(item: item, success: false, message: "This item has no action.")
 
         case .killProcess(let pid, let name):
+            // PID reuse guard: the PID was captured during the scan, and macOS
+            // may have recycled it for a different process. Verify that it
+            // still belongs to the expected executable before sending a signal.
+            let probe = try? await CommandRunner.run(
+                "/bin/ps",
+                arguments: ["-p", String(pid), "-o", "comm="],
+                timeout: 5
+            )
+
+            guard let probe, probe.exitCode == 0 else {
+                return ActionReport(
+                    item: item,
+                    success: false,
+                    message: "Could not verify process \(pid); quitting was cancelled."
+                )
+            }
+
+            let command = probe.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+            if command.isEmpty {
+                return ActionReport(
+                    item: item,
+                    success: true,
+                    message: "\(name) is no longer running."
+                )
+            }
+
+            guard Self.processStillMatches(command: command, name: name) else {
+                return ActionReport(
+                    item: item,
+                    success: false,
+                    message: "Refused to quit: PID \(pid) now belongs to a different process."
+                )
+            }
+
             return await run(
                 item,
                 executable: "/bin/kill",
@@ -234,6 +263,14 @@ enum ActionExecutor {
 
             do {
                 try await Task.detached(priority: .userInitiated) {
+                    // Re-check right before moving: the entry could have been
+                    // swapped for a symlink after the first validation.
+                    guard CleanupWhitelist.isSafeToTrash(path) else {
+                        throw CleanupError.refused(
+                            "Refused: \(path) is outside the cleanup whitelist."
+                        )
+                    }
+
                     try FileManager.default.trashItem(
                         at: URL(fileURLWithPath: path),
                         resultingItemURL: nil
@@ -256,6 +293,14 @@ enum ActionExecutor {
 
             do {
                 try await Task.detached(priority: .userInitiated) {
+                    // Same final gate as caches: never move a symlink or a
+                    // path that escaped the leftover rules.
+                    guard CleanupWhitelist.isSafeLeftoverToTrash(path) else {
+                        throw CleanupError.refused(
+                            "Refused: \(path) is not a top-level Application Support folder."
+                        )
+                    }
+
                     try FileManager.default.trashItem(
                         at: URL(fileURLWithPath: path),
                         resultingItemURL: nil
@@ -270,14 +315,28 @@ enum ActionExecutor {
             } catch {
                 return ActionReport(item: item, success: false, message: error.localizedDescription)
             }
-
-        case .removeLoginItem(let name):
-            return ActionReport(
-                item: item,
-                success: false,
-                message: "Removing \(name) is not supported yet."
-            )
         }
+    }
+
+    /// Case-insensitive match between the process name stored in the action and
+    /// the current `comm` of the PID. Group rows store the app bundle name
+    /// (e.g. "Google Chrome.app") while single rows store the executable name,
+    /// so both an exact last-component match and a substring of the full path
+    /// are accepted. False negatives are fine (the action is refused); false
+    /// positives are not.
+    static func processStillMatches(command: String, name: String) -> Bool {
+        let command = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !command.isEmpty else { return false }
+
+        let commandLower = command.lowercased()
+        let nameLower = name.lowercased()
+        guard !nameLower.isEmpty else { return false }
+
+        if URL(fileURLWithPath: command).lastPathComponent.lowercased() == nameLower {
+            return true
+        }
+
+        return commandLower.contains(nameLower)
     }
 
     private static func run(

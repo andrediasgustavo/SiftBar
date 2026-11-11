@@ -297,6 +297,24 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(pruned.disk.totalBytes, 100)
     }
 
+    func testReportDetectsAFailedSystemProbe() {
+        let healthy = ScanReport(
+            generatedAt: Date(),
+            items: [],
+            memory: MemoryStats(totalBytes: 8, usedBytes: 4, swapUsedBytes: 0, pressure: .normal),
+            disk: DiskStats(totalBytes: 100, usedBytes: 60, freeBytes: 40)
+        )
+        let failed = ScanReport(
+            generatedAt: Date(),
+            items: [],
+            memory: MemoryStats(totalBytes: 0, usedBytes: 0, swapUsedBytes: 0, pressure: .normal),
+            disk: DiskStats(totalBytes: 0, usedBytes: 0, freeBytes: 0)
+        )
+
+        XCTAssertFalse(healthy.failedToReadSystem)
+        XCTAssertTrue(failed.failedToReadSystem)
+    }
+
     func testRemovingItemsWithEmptySetKeepsReport() {
         let item = ScanItem(
             category: .caches,
