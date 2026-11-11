@@ -143,7 +143,8 @@ No repeated folder prompts.
 3. Eject the DMG. SiftBar runs in the menu bar — look for the filter icon.
    There is no Dock icon.
 
-**Requirements:** macOS 13 or later on Apple Silicon.
+**Requirements:** macOS 13 or later. Universal build for Apple Silicon and
+Intel Macs.
 
 ### First launch: the macOS security prompt
 
@@ -212,7 +213,9 @@ SiftBar never asks for administrator rights or runs `sudo`.
 1. Click the filter icon in the menu bar.
 2. Choose **Open Dashboard** (`⌘D`) or **Run Analysis** (`⌘R`).
 3. Press **Analyze**. The scan shows its progress and can be stopped; it is
-   read-only.
+   read-only. On first launch the dashboard opens on a short welcome screen
+   that explains what will be inspected and offers a single **Run First
+   Analysis** button.
 4. Filter by risk, search across titles/details/evidence, or use the folder
    button to reveal a path in Finder.
 5. Grouped processes show a chevron; expand the row to quit a specific PID.
