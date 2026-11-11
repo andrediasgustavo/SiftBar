@@ -147,15 +147,9 @@ struct ItemRow: View {
                 .textSelection(.enabled)
                 .help(item.evidence)
 
-            Spacer(minLength: 8)
-
-            // Keep the risk word visible: the rail is a scanning aid, not the
-            // only carrier of risk. Screen readers get it in the checkbox label.
-            Text(item.isProtected ? "Protected" : (item.isInformational ? "Info" : item.risk.label))
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(item.risk == .dangerous ? Color(nsColor: .systemRed) : Color.secondary)
-                .lineLimit(1)
-
+            // The hover-only button sits before the spacer so its reserved
+            // width never pushes the risk word away from the right edge. This
+            // keeps "Safe"/"Caution" aligned with the impact value above.
             if let url = item.revealURL {
                 Button {
                     FinderReveal.show(url)
@@ -172,6 +166,15 @@ struct ItemRow: View {
                 .help("Show in Finder")
                 .accessibilityLabel("Show in Finder")
             }
+
+            Spacer(minLength: 8)
+
+            // Keep the risk word visible: the rail is a scanning aid, not the
+            // only carrier of risk. Screen readers get it in the checkbox label.
+            Text(item.isProtected ? "Protected" : (item.isInformational ? "Info" : item.risk.label))
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(item.risk == .dangerous ? Color(nsColor: .systemRed) : Color.secondary)
+                .lineLimit(1)
         }
         .help("Source and command")
     }
