@@ -29,15 +29,33 @@ struct CacheCollector: Collector {
 
     func collect() async -> [ScanItem] {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let cachesPath = "\(home)/Library/Caches"
         // The broad `~/Library/Caches` target is replaced by one row per app
         // cache, so the result is actionable instead of a single blob.
         let targets = Self.targets(home: home).filter { $0.name != "General" }
         let running = await RunningProcesses.names()
 
+        // A single `du -d 1` measures every child of Caches. Static targets
+        // that live inside it (Homebrew) reuse those numbers instead of
+        // walking the same tree a second time.
+        let children = await PathSizer.childDirectorySizes(of: cachesPath, timeout: 20)
+        let childBytes = Dictionary(uniqueKeysWithValues: children.map { ($0.path, $0.bytes) })
+
         var measured: [Measured] = []
+        var targetsOutsideCaches: [Target] = []
+
+        for target in targets {
+            if target.path.hasPrefix(cachesPath + "/") {
+                if let bytes = childBytes[target.path], bytes >= Self.minimumBytes {
+                    measured.append(Measured(target: target, bytes: bytes))
+                }
+            } else {
+                targetsOutsideCaches.append(target)
+            }
+        }
 
         await withTaskGroup(of: Measured?.self) { group in
-            for target in targets {
+            for target in targetsOutsideCaches {
                 group.addTask {
                     guard let bytes = await PathSizer.sizeInBytes(of: target.path),
                           bytes >= Self.minimumBytes else { return nil }
@@ -52,8 +70,9 @@ struct CacheCollector: Collector {
             }
         }
 
-        measured.append(contentsOf: await Self.dynamicMeasured(
-            home: home,
+        measured.append(contentsOf: Self.dynamicMeasured(
+            children: children,
+            cachesPath: cachesPath,
             excluding: Set(targets.map(\.path))
         ))
 

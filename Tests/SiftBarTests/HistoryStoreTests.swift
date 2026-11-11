@@ -76,6 +76,22 @@ final class HistoryStoreTests: XCTestCase {
         XCTAssertEqual(loaded.failed, 1)
     }
 
+    func testHistoryFileIsPrivateToTheUser() throws {
+        let store = try makeStore()
+
+        store.append(HistoryRecord(
+            id: UUID(),
+            startedAt: Date(),
+            finishedAt: Date(),
+            entries: []
+        ))
+
+        let attributes = try FileManager.default.attributesOfItem(atPath: store.fileURL.path)
+        let permissions = try XCTUnwrap(attributes[.posixPermissions] as? NSNumber)
+
+        XCTAssertEqual(permissions.intValue & 0o777, 0o600)
+    }
+
     // MARK: - Helpers
 
     private func makeStore() throws -> HistoryStore {

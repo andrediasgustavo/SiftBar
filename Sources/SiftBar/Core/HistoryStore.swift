@@ -83,6 +83,13 @@ struct HistoryStore {
             encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             try encoder.encode(records).write(to: fileURL, options: .atomic)
+
+            // The log contains paths and executed commands; keep it private to
+            // the user even on shared Macs.
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o600],
+                ofItemAtPath: fileURL.path
+            )
         } catch {
             // Best-effort: never break an action because history could not be written.
         }

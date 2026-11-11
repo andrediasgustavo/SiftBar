@@ -85,12 +85,18 @@ final class ReviewActionModel: ObservableObject {
         let entries = zip(results, items).map { report, item in
             HistoryEntry(item: item, report: report)
         }
-        history.append(HistoryRecord(
+        let store = history
+        let record = HistoryRecord(
             id: UUID(),
             startedAt: startedAt,
             finishedAt: Date(),
             entries: entries
-        ))
+        )
+        // File I/O is best-effort and must not block the main actor. Await the
+        // write so the result card and tests still observe the completed log.
+        await Task.detached(priority: .utility) {
+            store.append(record)
+        }.value
 
         reports = results
         self.failedItems = failedItems
@@ -146,6 +152,8 @@ final class ReviewActionModel: ObservableObject {
     }
 
     /// README/demo hook: show a realistic success card without touching disk.
+    /// Kept compiled (the only call site is the SIFTBAR_DEMO screenshot hook)
+    /// so tests can cover `succeededIDs` without a real action.
     func loadDemoReports() {
         let caches = DemoReport.make().items.filter { $0.category == .caches }
         reports = caches.prefix(2).map { item in

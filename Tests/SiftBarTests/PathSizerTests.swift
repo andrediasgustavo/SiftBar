@@ -140,6 +140,33 @@ final class PathSizerTests: XCTestCase {
         XCTAssertGreaterThan(value ?? 0, 0)
     }
 
+    func testChildDirectorySizesCanExcludeNames() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SiftBarTests-\(UUID().uuidString)", isDirectory: true)
+        let kept = directory.appendingPathComponent("Kept", isDirectory: true)
+        let photos = directory.appendingPathComponent("com.apple.Photos", isDirectory: true)
+        try FileManager.default.createDirectory(at: kept, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: photos, withIntermediateDirectories: true)
+        try Data(repeating: 0xAB, count: 1_000_000)
+            .write(to: kept.appendingPathComponent("payload.bin"))
+        try Data(repeating: 0xCD, count: 1_000_000)
+            .write(to: photos.appendingPathComponent("payload.bin"))
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let all = await PathSizer.childDirectorySizes(of: directory.path)
+        let filtered = await PathSizer.childDirectorySizes(
+            of: directory.path,
+            excludingNames: ["com.apple.photos"]
+        )
+
+        XCTAssertTrue(all.contains { $0.path == kept.standardizedFileURL.path })
+        XCTAssertTrue(all.contains { $0.path == photos.standardizedFileURL.path })
+        XCTAssertTrue(filtered.contains { $0.path == kept.standardizedFileURL.path })
+        XCTAssertFalse(filtered.contains { $0.path == photos.standardizedFileURL.path })
+    }
+
     func testSizesOfChildrenCanExcludeSensitiveFolders() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SiftBarTests-\(UUID().uuidString)", isDirectory: true)

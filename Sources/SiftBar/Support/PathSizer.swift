@@ -7,15 +7,38 @@ enum PathSizer {
     }
 
     /// Returns the allocated size of a path in bytes, or nil when it does not exist.
-    static func sizeInBytes(of path: String, timeout: TimeInterval = 20) async -> Int64? {
+    ///
+    /// A recent measurement with the same directory signature is reused so the
+    /// post-action refresh does not walk the same tree again.
+    static func sizeInBytes(
+        of path: String,
+        timeout: TimeInterval = 20,
+        cache: SizeCache = .shared
+    ) async -> Int64? {
         guard FileManager.default.fileExists(atPath: path) else { return nil }
+
+        let signature = modificationDate(of: path)
+        if let cached = cache.lookup(path: path, signature: signature) {
+            return cached
+        }
+
         guard let result = try? await CommandRunner.run(
             "/usr/bin/du",
             arguments: ["-sk", path],
             timeout: timeout
         ) else { return nil }
 
-        return parseDU(result.stdout)
+        guard let bytes = parseDU(result.stdout) else { return nil }
+        cache.store(path: path, bytes: bytes, signature: signature)
+        return bytes
+    }
+
+    private static func modificationDate(of path: String) -> Date {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+              let date = attributes[.modificationDate] as? Date else {
+            return .distantPast
+        }
+        return date
     }
 
     /// Sizes of the immediate children of a directory (files and folders).
@@ -39,8 +62,16 @@ enum PathSizer {
         return all.filter { seen.insert($0.path).inserted }
     }
 
+    /// Maximum number of `du` processes spawned at once by `sizesOfChildren`.
+    /// A folder such as `~/Library/Containers` can contain hundreds of entries;
+    /// one process per entry at the same time makes the whole Mac sluggish.
+    static let maxConcurrentDu = 8
+
     /// Sum of the immediate children of a directory, skipping names that would
     /// trigger sensitive permission prompts (for example a Photos container).
+    ///
+    /// The children are measured in bounded chunks so the scan never spawns a
+    /// process per entry at once.
     static func sizesOfChildren(
         of path: String,
         excludingNames: Set<String> = [],
@@ -55,25 +86,41 @@ enum PathSizer {
             .filter { !excludingNames.contains($0.lowercased()) }
             .map { "\(path)/\($0)" }
 
-        return await withTaskGroup(of: Int64.self) { group in
-            for child in allowed {
-                group.addTask {
-                    await sizeInBytes(of: child, timeout: timeout) ?? 0
+        var total: Int64 = 0
+        var index = 0
+        while index < allowed.count {
+            let end = min(index + maxConcurrentDu, allowed.count)
+            let chunk = Array(allowed[index..<end])
+
+            await withTaskGroup(of: Int64.self) { group in
+                for child in chunk {
+                    group.addTask {
+                        await sizeInBytes(of: child, timeout: timeout) ?? 0
+                    }
+                }
+
+                for await size in group {
+                    total += size
                 }
             }
 
-            var total: Int64 = 0
-            for await size in group {
-                total += size
-            }
-            return total
+            index = end
         }
+        return total
     }
 
     /// Sizes of the immediate child directories of a directory, without the
     /// extra `find` pass used by `childSizes`. Used by the space-map collector,
     /// where only directory totals are needed and process load matters.
-    static func childDirectorySizes(of path: String, timeout: TimeInterval = 15) async -> [ChildSize] {
+    ///
+    /// `excludingNames` filters children by their last path component
+    /// (lowercased), which keeps the sensitive Photos containers out of the
+    /// walk without opening them.
+    static func childDirectorySizes(
+        of path: String,
+        excludingNames: Set<String> = [],
+        timeout: TimeInterval = 15
+    ) async -> [ChildSize] {
         guard FileManager.default.fileExists(atPath: path) else { return [] }
         guard let result = try? await CommandRunner.run(
             "/usr/bin/du",
@@ -81,7 +128,11 @@ enum PathSizer {
             timeout: timeout
         ) else { return [] }
 
-        return parseChildSizes(result.stdout, root: path)
+        return parseChildSizes(result.stdout, root: path).filter { child in
+            !excludingNames.contains(
+                URL(fileURLWithPath: child.path).lastPathComponent.lowercased()
+            )
+        }
     }
 
     private static func directorySizes(of path: String, timeout: TimeInterval) async -> [ChildSize] {

@@ -47,10 +47,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Development hooks:
         //   open SiftBar.app --args --show-dashboard
         //   open SiftBar.app --args --show-dashboard --analyze
-        //   open SiftBar.app --args --demo [--demo-access|--demo-result]
-        //   open SiftBar.app --args --demo --demo-page <page> [--demo-details]
+        // Demo/screenshot hooks only exist in `./scripts/build.sh demo|debug`.
         let arguments = CommandLine.arguments
 
+        #if SIFTBAR_DEMO
         if arguments.contains("--demo") {
             AppState.shared.loadDemoReport()
             DashboardWindowController.shared.show(state: AppState.shared)
@@ -61,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             return
         }
+        #endif
 
         if arguments.contains("--show-dashboard") {
             DashboardWindowController.shared.show(state: AppState.shared)

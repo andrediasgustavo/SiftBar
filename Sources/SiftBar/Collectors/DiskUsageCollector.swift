@@ -38,73 +38,162 @@ struct DiskUsageCollector: Collector {
     func collect() async -> [ScanItem] {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
 
-        // Measure only directory totals. Scanning all of `~` or `~/Library`
-        // also traverses Photos/TCC-protected folders and triggers permission
-        // prompts for data the space map does not need.
-        async let appSupport = PathSizer.sizeInBytes(of: "\(home)/Library/Application Support", timeout: 25)
-        async let containers = PathSizer.sizesOfChildren(
+        // The space map touches many large trees. Running every `du` at once
+        // makes the whole Mac sluggish during the scan, so measurements are
+        // grouped in bounded chunks below.
+        struct Measurement: Sendable {
+            let key: String
+            let path: String
+            let timeout: TimeInterval
+            let include: Bool
+        }
+
+        var measurements: [Measurement] = [
+            Measurement(
+                key: "appSupport",
+                path: "\(home)/Library/Application Support",
+                timeout: 25,
+                include: true
+            ),
+            Measurement(
+                key: "groupContainers",
+                path: "\(home)/Library/Group Containers",
+                timeout: 25,
+                include: true
+            ),
+            Measurement(
+                key: "caches",
+                path: "\(home)/Library/Caches",
+                timeout: 25,
+                include: true
+            ),
+            Measurement(
+                key: "developerLibrary",
+                path: "\(home)/Library/Developer",
+                timeout: 20,
+                include: true
+            ),
+            Measurement(
+                key: "androidLibrary",
+                path: "\(home)/Library/Android",
+                timeout: 20,
+                include: true
+            ),
+            Measurement(
+                key: "mobileDocuments",
+                path: "\(home)/Library/Mobile Documents",
+                timeout: 25,
+                include: true
+            ),
+            Measurement(key: "applications", path: "/Applications", timeout: 30, include: true),
+            Measurement(
+                key: "userApplications",
+                path: "\(home)/Applications",
+                timeout: 10,
+                include: true
+            ),
+            Measurement(key: "systemLibrary", path: "/Library", timeout: 30, include: true),
+            Measurement(key: "android", path: "\(home)/.android", timeout: 15, include: true),
+            Measurement(key: "gradle", path: "\(home)/.gradle", timeout: 15, include: true),
+            Measurement(key: "npm", path: "\(home)/.npm", timeout: 15, include: true),
+            // TCC-protected folders are opt-in. When disabled they are skipped
+            // without spawning a process (the child task returns zero).
+            Measurement(
+                key: "documents",
+                path: "\(home)/Documents",
+                timeout: 20,
+                include: includeProtectedFolders
+            ),
+            Measurement(
+                key: "desktop",
+                path: "\(home)/Desktop",
+                timeout: 20,
+                include: includeProtectedFolders
+            ),
+            Measurement(
+                key: "downloads",
+                path: "\(home)/Downloads",
+                timeout: 20,
+                include: includeProtectedFolders
+            )
+        ]
+
+        // Containers are measured with a single `du -d 1` instead of one
+        // process per container, which could be hundreds.
+        async let containerSizesTask = PathSizer.childDirectorySizes(
             of: "\(home)/Library/Containers",
             excludingNames: Self.sensitiveLibraryNames,
             timeout: 20
         )
-        async let groupContainers = PathSizer.sizeInBytes(of: "\(home)/Library/Group Containers", timeout: 25)
-        async let caches = PathSizer.sizeInBytes(of: "\(home)/Library/Caches", timeout: 25)
-        async let developerLibrary = PathSizer.sizeInBytes(of: "\(home)/Library/Developer", timeout: 20)
-        async let androidLibrary = PathSizer.sizeInBytes(of: "\(home)/Library/Android", timeout: 20)
-        async let mobileDocuments = PathSizer.sizeInBytes(of: "\(home)/Library/Mobile Documents", timeout: 25)
 
-        async let applications = PathSizer.sizeInBytes(of: "/Applications", timeout: 30)
-        async let userApplications = PathSizer.sizeInBytes(of: "\(home)/Applications", timeout: 10)
-        async let systemLibrary = PathSizer.sizeInBytes(of: "/Library", timeout: 30)
+        var values: [String: Int64] = [:]
+        for chunk in Self.chunks(measurements, size: Self.maxConcurrentMeasurements) {
+            await withTaskGroup(of: (String, Int64).self) { group in
+                for measurement in chunk {
+                    group.addTask {
+                        guard measurement.include else { return (measurement.key, 0) }
+                        let bytes = await PathSizer.sizeInBytes(
+                            of: measurement.path,
+                            timeout: measurement.timeout
+                        ) ?? 0
+                        return (measurement.key, bytes)
+                    }
+                }
 
-        async let documents = Self.optionalSize(
-            of: "\(home)/Documents",
-            include: includeProtectedFolders,
-            timeout: 20
-        )
-        async let desktop = Self.optionalSize(
-            of: "\(home)/Desktop",
-            include: includeProtectedFolders,
-            timeout: 20
-        )
-        async let downloads = Self.optionalSize(
-            of: "\(home)/Downloads",
-            include: includeProtectedFolders,
-            timeout: 20
-        )
+                for await (key, bytes) in group {
+                    values[key] = bytes
+                }
+            }
+        }
 
-        async let android = PathSizer.sizeInBytes(of: "\(home)/.android", timeout: 15)
-        async let gradle = PathSizer.sizeInBytes(of: "\(home)/.gradle", timeout: 15)
-        async let npm = PathSizer.sizeInBytes(of: "\(home)/.npm", timeout: 15)
+        let containerSizes = await containerSizesTask
+        let containersBytes = containerSizes.reduce(Int64(0)) { $0 + $1.bytes }
 
         let homeSizes: [String: Int64] = [
-            "Documents": await documents ?? 0,
-            "Desktop": await desktop ?? 0,
-            "Downloads": await downloads ?? 0,
-            ".android": await android ?? 0,
-            ".gradle": await gradle ?? 0,
-            ".npm": await npm ?? 0
+            "Documents": values["documents"] ?? 0,
+            "Desktop": values["desktop"] ?? 0,
+            "Downloads": values["downloads"] ?? 0,
+            ".android": values["android"] ?? 0,
+            ".gradle": values["gradle"] ?? 0,
+            ".npm": values["npm"] ?? 0
         ]
 
         let librarySizes: [String: Int64] = [
-            "Application Support": await appSupport ?? 0,
-            "Containers": await containers,
-            "Group Containers": await groupContainers ?? 0,
-            "Caches": await caches ?? 0,
-            "Developer": await developerLibrary ?? 0,
-            "Android": await androidLibrary ?? 0,
-            "Mobile Documents": await mobileDocuments ?? 0
+            "Application Support": values["appSupport"] ?? 0,
+            "Containers": containersBytes,
+            "Group Containers": values["groupContainers"] ?? 0,
+            "Caches": values["caches"] ?? 0,
+            "Developer": values["developerLibrary"] ?? 0,
+            "Android": values["androidLibrary"] ?? 0,
+            "Mobile Documents": values["mobileDocuments"] ?? 0
         ]
 
         let sizes = Sizes(
             home: homeSizes,
             library: librarySizes,
-            applications: (await applications ?? 0) + (await userApplications ?? 0),
-            systemLibrary: await systemLibrary ?? 0
+            applications: (values["applications"] ?? 0) + (values["userApplications"] ?? 0),
+            systemLibrary: values["systemLibrary"] ?? 0
         )
 
         guard sizes != .empty else { return [] }
         return Self.items(sizes: sizes, disk: disk)
+    }
+
+    /// Number of `du` walks allowed to run at the same time.
+    static let maxConcurrentMeasurements = 7
+
+    /// Splits values into chunks so each task group stays bounded.
+    static func chunks<T>(_ values: [T], size: Int) -> [[T]] {
+        guard size > 0 else { return [values] }
+
+        var result: [[T]] = []
+        var index = 0
+        while index < values.count {
+            let end = min(index + size, values.count)
+            result.append(Array(values[index..<end]))
+            index = end
+        }
+        return result
     }
 
     /// Skips TCC-protected home folders when the user has not granted Full

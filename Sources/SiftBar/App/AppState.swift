@@ -31,7 +31,9 @@ final class AppState: ObservableObject {
     @Published var isAccessSheetPresented = false
 
     private let onboardingKey = "SiftBar.hasSeenAccessOnboarding"
+    #if SIFTBAR_DEMO
     private var demoMode = false
+    #endif
     private var scanInFlight = false
     private var activeScanTask: Task<ScanReport, Never>?
     /// True when the report is being refreshed after a confirmed action
@@ -81,7 +83,9 @@ final class AppState: ObservableObject {
         guard !scanInFlight, !isApplying else { return }
 
         scanInFlight = true
+        #if SIFTBAR_DEMO
         demoMode = false
+        #endif
         refreshAccess()
         errorMessage = nil
         isScanning = true
@@ -149,6 +153,7 @@ final class AppState: ObservableObject {
 
         if cancelled {
             status = "Analysis stopped."
+            errorMessage = nil
             return
         }
 
@@ -156,6 +161,11 @@ final class AppState: ObservableObject {
             result = result.mergingSlowItems(from: current)
         }
         result = result.removingItems(withIDs: [], paths: activeTombstones())
+
+        // Surface a total probe failure instead of showing an empty report.
+        errorMessage = result.failedToReadSystem
+            ? "System information could not be read. Try again."
+            : nil
 
         report = result
         let duration = Date().timeIntervalSince(startedAt)
@@ -196,11 +206,13 @@ final class AppState: ObservableObject {
     }
 
     func refreshAccess() {
+        #if SIFTBAR_DEMO
         if demoMode {
             accessStatus = .granted
             includesProtectedFolders = true
             return
         }
+        #endif
 
         accessStatus = FullDiskAccess.status()
         includesProtectedFolders = accessStatus == .granted || FullDiskAccess.allowsFolderPrompts
@@ -257,6 +269,7 @@ final class AppState: ObservableObject {
         Task { await analyze() }
     }
 
+    #if SIFTBAR_DEMO
     /// Synthetic data for README screenshots. Never used by a normal scan.
     func loadDemoReport() {
         demoMode = true
@@ -269,6 +282,7 @@ final class AppState: ObservableObject {
         accessHint = nil
         errorMessage = nil
     }
+    #endif
 
     func clearReport() {
         report = nil
@@ -297,6 +311,9 @@ final class AppState: ObservableObject {
         let now = Date()
         for path in paths {
             deletedPaths[path] = now
+            // Drop any cached measurement for the removed tree so a recreated
+            // cache is walked again instead of showing stale bytes.
+            SizeCache.shared.invalidate(path: path)
         }
         purgeTombstones(now: now)
         guard let current = report else { return }
