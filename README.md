@@ -231,6 +231,28 @@ SiftBar never asks for administrator rights or runs `sudo`.
    and `⌘F` focuses search.
 10. Press **Quit SiftBar** (`⌘Q`) to exit.
 
+## Build from source
+
+**Requirements:** macOS 13 or later, Swift 5.9+, and Command Line Tools.
+Full Xcode is only needed for `swift test`.
+
+```bash
+git clone https://github.com/andrediasgustavo/SiftBar.git
+cd SiftBar
+./scripts/run.sh
+```
+
+`run.sh` builds a release binary, assembles `dist/SiftBar.app`, signs it ad-hoc,
+and launches it.
+
+| Command | Result |
+|---|---|
+| `./scripts/run.sh` | Build (release), bundle, sign, and launch |
+| `./scripts/build.sh` | Build `dist/SiftBar.app` without launching |
+| `./scripts/test.sh` | Run the test suite without Xcode (local fallback) |
+| `./scripts/package.sh` | Build `dist/SiftBar.dmg` |
+| `./scripts/clean.sh` | Remove `.build/` and `dist/` |
+
 ## License
 
 Released under the [MIT License](LICENSE). © 2026 André Dias.
