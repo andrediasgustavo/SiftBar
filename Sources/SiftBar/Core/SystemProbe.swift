@@ -2,10 +2,10 @@ import Foundation
 
 enum SystemProbe {
     static func snapshotOrEmpty() async -> SystemSnapshot {
-        (try? await snapshot()) ?? .empty
+        await snapshot()
     }
 
-    static func snapshot() async throws -> SystemSnapshot {
+    static func snapshot() async -> SystemSnapshot {
         async let memorySize = CommandRunner.run("/usr/sbin/sysctl", arguments: ["-n", "hw.memsize"])
         async let vmStat = CommandRunner.run("/usr/bin/vm_stat")
         async let swapUsage = CommandRunner.run("/usr/sbin/sysctl", arguments: ["-n", "vm.swapusage"])
@@ -14,23 +14,30 @@ enum SystemProbe {
         async let topPhysMem = CommandRunner.run("/usr/bin/top", arguments: ["-l", "1", "-n", "0"], timeout: 10)
         async let apfsVolumes = CommandRunner.run("/usr/sbin/diskutil", arguments: ["apfs", "list", "-plist"], timeout: 10)
 
-        var (memoryResult, vmResult, swapResult, pressureResult, diskResult) =
-            try await (memorySize, vmStat, swapUsage, pressure, diskUsage)
+        // Each probe is independent: one failing command must not blank the
+        // whole snapshot. Missing values fall back to zero/neutral defaults.
+        let memoryResult = try? await memorySize
+        let vmResult = try? await vmStat
+        let swapResult = try? await swapUsage
+        let pressureResult = try? await pressure
+        var diskResult = try? await diskUsage
         let topResult = try? await topPhysMem
         let volumeResult = try? await apfsVolumes
 
         // macOS exposes the read-only system volume at "/". The writable Data
         // volume holds the real usage numbers; fall back to "/" if unavailable.
-        if diskResult.exitCode != 0 {
-            diskResult = try await CommandRunner.run("/bin/df", arguments: ["-k", "/"])
+        if diskResult?.exitCode != 0 {
+            diskResult = try? await CommandRunner.run("/bin/df", arguments: ["-k", "/"])
         }
 
-        let totalMemory = UInt64(memoryResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
-        let vm = parseVMStat(vmResult.stdout)
+        let totalMemory = UInt64(
+            memoryResult?.stdout.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        ) ?? 0
+        let vm = parseVMStat(vmResult?.stdout ?? "")
         let top = topResult.flatMap { $0.exitCode == 0 ? parseTopPhysMem($0.stdout) : nil }
         let usedMemory = min(top?.used ?? vm.usedBytes, totalMemory)
-        let swapUsed = parseSwapUsed(swapResult.stdout) ?? 0
-        let memoryPressure = parsePressure(pressureResult.stdout)
+        let swapUsed = parseSwapUsed(swapResult?.stdout ?? "") ?? 0
+        let memoryPressure = parsePressure(pressureResult?.stdout ?? "")
 
         let wiredBytes = top?.wired ?? vm.wiredBytes
         let compressedBytes = top?.compressed ?? vm.compressedBytes
@@ -39,7 +46,13 @@ enum SystemProbe {
             ? usedMemory - wiredBytes - compressedBytes
             : vm.appBytes
 
-        var disk = try parseDisk(diskResult.stdout)
+        var disk: DiskStats
+        if let output = diskResult?.stdout, let parsed = try? parseDisk(output) {
+            disk = parsed
+        } else {
+            disk = DiskStats(totalBytes: 0, usedBytes: 0, freeBytes: 0)
+        }
+
         let volumes = volumeResult.flatMap {
             $0.exitCode == 0 ? parseAPFSVolumes(Data($0.stdout.utf8)) : nil
         } ?? []

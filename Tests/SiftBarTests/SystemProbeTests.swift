@@ -286,8 +286,8 @@ final class SystemProbeTests: XCTestCase {
 
     // MARK: - Live snapshot
 
-    func testSnapshotReturnsRealSystemValues() async throws {
-        let snapshot = try await SystemProbe.snapshot()
+    func testSnapshotReturnsRealSystemValues() async {
+        let snapshot = await SystemProbe.snapshot()
 
         XCTAssertGreaterThan(snapshot.totalMemoryBytes, 0)
         XCTAssertGreaterThan(snapshot.freeDiskBytes, 0)
@@ -302,8 +302,8 @@ final class SystemProbeTests: XCTestCase {
         XCTAssertGreaterThan(snapshot.totalMemoryBytes, 0)
     }
 
-    func testSnapshotIncludesAPFSVolumeUsage() async throws {
-        let snapshot = try await SystemProbe.snapshot()
+    func testSnapshotIncludesAPFSVolumeUsage() async {
+        let snapshot = await SystemProbe.snapshot()
 
         XCTAssertFalse(snapshot.disk.volumes.isEmpty)
         XCTAssertTrue(snapshot.disk.volumes.contains { $0.roles.contains("Data") })

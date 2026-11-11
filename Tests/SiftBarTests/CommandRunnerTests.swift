@@ -87,6 +87,35 @@ final class CommandRunnerTests: XCTestCase {
         }
     }
 
+    /// A child that ignores SIGTERM must be killed after the grace period;
+    /// the caller must not stay blocked until the hard cap or forever.
+    func testCommandIgnoringSigtermIsKilledAfterTheGracePeriod() async {
+        let started = Date()
+
+        do {
+            _ = try await CommandRunner.run(
+                "/bin/sh",
+                // `exec` keeps the ignored disposition: a single `sleep`
+                // process that ignores SIGTERM and does not hold child pipes.
+                arguments: ["-c", "trap '' TERM; exec sleep 60"],
+                timeout: 0.5
+            )
+            XCTFail("Expected CommandRunner to time out.")
+        } catch let error as CommandError {
+            guard case .timedOut = error else {
+                return XCTFail("Expected .timedOut, got \(error).")
+            }
+        } catch {
+            XCTFail("Expected CommandError, got \(error).")
+        }
+
+        let elapsed = Date().timeIntervalSince(started)
+        XCTAssertLessThan(
+            elapsed,
+            0.5 + CommandRunner.killGrace + CommandRunner.hardCap + 2
+        )
+    }
+
     /// `Stop` in the scan workspace cancels the Task; the child process must
     /// be terminated instead of waiting for its timeout.
     func testCancellingTheTaskTerminatesTheCommand() async throws {

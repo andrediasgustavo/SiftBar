@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 struct CommandResult: Sendable {
@@ -21,11 +22,23 @@ enum CommandError: Error, LocalizedError {
 }
 
 enum CommandRunner {
+    /// Grace period between SIGTERM and SIGKILL. Most children exit on SIGTERM;
+    /// `du` stuck on a slow network mount may not.
+    static let killGrace: TimeInterval = 2
+    /// After the SIGKILL, how long to wait for the pipes to close before the
+    /// caller is released. A child holding the pipe (e.g. a `find -exec du`)
+    /// can outlive its parent, so this hard cap keeps the scan responsive.
+    static let hardCap: TimeInterval = 5
+
     /// Runs an executable without a shell, so arguments cannot be injected.
     ///
     /// Output is drained while the process runs. Reading only in the
     /// termination handler deadlocks as soon as a command writes more than the
     /// pipe buffer (about 64 KB), which is common for `ps` listings.
+    ///
+    /// Timeouts and cancellation escalate: SIGTERM, then SIGKILL after
+    /// `killGrace`, then a hard cap that releases the caller even if a child
+    /// still holds the pipe.
     static func run(
         _ executable: String,
         arguments: [String] = [],
@@ -48,19 +61,38 @@ enum CommandRunner {
 
                 let resumeGuard = ResumeGuard()
                 let timeoutFlag = TimeoutFlag()
+                let queue = DispatchQueue.global(qos: .userInitiated)
 
-                let timeoutItem = DispatchWorkItem {
+                let terminateItem = DispatchWorkItem {
                     guard process.isRunning else { return }
                     timeoutFlag.markTimedOut()
                     process.terminate()
                 }
-                DispatchQueue.global(qos: .userInitiated)
-                    .asyncAfter(deadline: .now() + timeout, execute: timeoutItem)
+                let killItem = DispatchWorkItem {
+                    guard process.isRunning else { return }
+                    kill(process.processIdentifier, SIGKILL)
+                }
+                let hardItem = DispatchWorkItem {
+                    // The child may still hold the pipe (for example a `du`
+                    // spawned by `find`). Never leave the caller waiting on it.
+                    resumeGuard.perform {
+                        continuation.resume(throwing: CommandError.timedOut(timeout))
+                    }
+                }
+
+                queue.asyncAfter(deadline: .now() + timeout, execute: terminateItem)
+                queue.asyncAfter(deadline: .now() + timeout + Self.killGrace, execute: killItem)
+                queue.asyncAfter(
+                    deadline: .now() + timeout + Self.killGrace + Self.hardCap,
+                    execute: hardItem
+                )
 
                 do {
                     try process.run()
                 } catch {
-                    timeoutItem.cancel()
+                    terminateItem.cancel()
+                    killItem.cancel()
+                    hardItem.cancel()
                     resumeGuard.perform {
                         continuation.resume(throwing: CommandError.launchFailed(error.localizedDescription))
                     }
@@ -69,11 +101,13 @@ enum CommandRunner {
 
                 // Drain both pipes before waiting for the process. This prevents
                 // the child from blocking on a full pipe buffer.
-                DispatchQueue.global(qos: .userInitiated).async {
+                queue.async {
                     let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
                     let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
                     process.waitUntilExit()
-                    timeoutItem.cancel()
+                    terminateItem.cancel()
+                    killItem.cancel()
+                    hardItem.cancel()
 
                     if timeoutFlag.didTimeOut {
                         resumeGuard.perform {
@@ -94,10 +128,16 @@ enum CommandRunner {
         } onCancel: {
             // `Stop` in the scan workspace cancels the task; terminating the
             // child makes `du` return immediately instead of waiting for its
-            // timeout.
+            // timeout. A child that ignores SIGTERM is killed after the grace
+            // period.
             let process = box.process
-            if process.isRunning {
-                process.terminate()
+            guard process.isRunning else { return }
+            process.terminate()
+
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + Self.killGrace) {
+                if process.isRunning {
+                    kill(process.processIdentifier, SIGKILL)
+                }
             }
         }
 
