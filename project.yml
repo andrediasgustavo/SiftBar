@@ -51,6 +51,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.andredias.siftbar.uitests
         TEST_TARGET_NAME: SiftBar
+        GENERATE_INFOPLIST_FILE: YES
 
 schemes:
   SiftBar:
