@@ -299,7 +299,7 @@ struct DiskUsageCollector: Collector {
         categories.append(Category(
             name: "Developer",
             bytes: developerBytes,
-            detail: "Xcode, Android SDK/emulator, Gradle and npm data.",
+            detail: "Xcode data in your home folder, Android SDK/emulator, Gradle and npm.",
             evidence: ["du -sk ~/Library/Developer", "du -sk ~/Library/Android"]
         ))
         categories.append(Category(
@@ -339,7 +339,7 @@ struct DiskUsageCollector: Collector {
             categories.append(Category(
                 name: "System & other",
                 bytes: remainder,
-                detail: "Not measured by SiftBar: Pictures/Photos, macOS itself, /System, /private, snapshots, purgeable space and other volumes. SiftBar will not delete any of it.",
+                detail: "Not measured by SiftBar: Pictures/Photos, macOS itself, /System, /private, snapshots, purgeable space, Xcode simulator devices/runtimes (/Library/Developer) and other volumes. SiftBar will not delete any of it.",
                 evidence: ["total used - measured categories"]
             ))
         }
