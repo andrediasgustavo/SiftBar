@@ -164,6 +164,10 @@ func recognize(_ image: CGImage) -> OCRResult {
     return OCRResult(lines: lines)
 }
 
+/// Text from the last snapshot, printed when a scenario fails so CI logs show
+/// whether the bitmap was blank or just contained the wrong text.
+var lastOCRText: String = ""
+
 @MainActor
 func capture(_ window: NSWindow, settle: TimeInterval = 0.6) -> OCRResult {
     pump(settle)
@@ -184,7 +188,9 @@ func capture(_ window: NSWindow, settle: TimeInterval = 0.6) -> OCRResult {
         savePNG(image, name: ProcessInfo.processInfo.environment["SIFTBAR_UI_NAME"] ?? "snapshot")
     }
 
-    return recognize(image)
+    let result = recognize(image)
+    lastOCRText = result.allText
+    return result
 }
 
 func savePNG(_ image: CGImage, name: String) {
@@ -412,6 +418,14 @@ func runScenario(_ name: String) -> Int32 {
     for failure in check.failures {
         print("  - \(failure)")
     }
+
+    print("--- OCR text ---")
+    if lastOCRText.isEmpty {
+        print("(empty: the snapshot rendered no text)")
+    } else {
+        print(lastOCRText)
+    }
+    print("--- end OCR ---")
     return 1
 }
 

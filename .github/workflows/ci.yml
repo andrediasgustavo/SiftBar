@@ -116,9 +116,26 @@ jobs:
 
       - name: Run UI tests
         run: |
+          set +e
           xcodebuild test \
             -project SiftBar.xcodeproj \
             -scheme SiftBar \
             -destination 'platform=macOS' \
-            CODE_SIGN_IDENTITY=- \
-            CODE_SIGNING_REQUIRED=NO
+            -resultBundlePath build/UI.xcresult \
+            2>&1 | tee ui-xcuitest.log
+          status=${PIPESTATUS[0]}
+          set -e
+
+          if [ "$status" -ne 0 ]; then
+            {
+              echo "### XCUITest failure"
+              echo '```'
+              grep -E "error:|UI Testing Failure|Testing failed|failed \\(" ui-xcuitest.log | head -60 || true
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            xcrun xcresulttool get test-results summary \
+              --path build/UI.xcresult >> "$GITHUB_STEP_SUMMARY" 2>&1 || true
+          fi
+
+          exit "$status"

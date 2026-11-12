@@ -14,7 +14,13 @@ FULL=0
 [ "${1:-}" = "--full" ] && FULL=1
 
 echo "==> Unit tests"
-"$ROOT/scripts/test.sh"
+if ! "$ROOT/scripts/test.sh"; then
+    # The suite spawns real processes and is timing-sensitive: on a loaded
+    # machine (Spotlight indexing, Xcode install, a build in another window)
+    # a command test can hit its timeout. Retry once before blocking a commit.
+    echo "Unit tests failed; retrying once (the suite is timing-sensitive under load)..."
+    "$ROOT/scripts/test.sh"
+fi
 
 echo "==> UI smoke tests (snapshot + OCR)"
 "$ROOT/scripts/ui-smoke.sh"

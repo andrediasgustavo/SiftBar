@@ -76,13 +76,24 @@ xcrun swiftc \
     "$ROOT/Tests/UITests/main.swift"
 
 echo "==> Running UI smoke tests"
+LOG="$(mktemp)"
+trap 'rm -f "$LOG"' EXIT
 FAILED=0
 if [ -n "$ONLY" ]; then
-    "$BUILD/SiftBarUISmoke" "$ONLY" || FAILED=1
+    "$BUILD/SiftBarUISmoke" "$ONLY" 2>&1 | tee "$LOG" || FAILED=1
 else
     for scenario in "${SCENARIOS[@]}"; do
-        "$BUILD/SiftBarUISmoke" "$scenario" || FAILED=1
+        "$BUILD/SiftBarUISmoke" "$scenario" 2>&1 | tee -a "$LOG" || FAILED=1
     done
+fi
+
+if [ "$FAILED" -ne 0 ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    {
+        echo "### UI smoke failure"
+        echo '```'
+        tail -150 "$LOG"
+        echo '```'
+    } >> "$GITHUB_STEP_SUMMARY"
 fi
 
 if [ "$KEEP" -eq 0 ]; then
