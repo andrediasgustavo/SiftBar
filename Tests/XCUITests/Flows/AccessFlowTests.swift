@@ -49,7 +49,8 @@ final class AccessFlowTests: SiftBarFlowTestCase {
             predicate: NSPredicate { _, _ in
                 // isTerminated is only a cached NSRunningApplication property
                 // and remained stale in this flow. Query the actual PID.
-                kill(originalProcess.processIdentifier, 0) != 0 && errno == ESRCH
+                if kill(originalProcess.processIdentifier, 0) == 0 { return false }
+                return errno == ESRCH
             },
             object: nil
         )
@@ -64,9 +65,16 @@ final class AccessFlowTests: SiftBarFlowTestCase {
 
     /// The installed app and the test app share a bundle identifier. The test
     /// target is the newest launch; after restart, the replacement is newest.
+    ///
+    /// XCTest can also expose a placeholder entry for an app that LaunchServices
+    /// has not registered yet: pid -1 with no bundle URL, sometimes carrying a
+    /// newer launch date than the real process. On CI that placeholder won the
+    /// comparison, so the test captured pid -1 and `kill(-1, 0)` kept reporting
+    /// "still alive". Only real, live processes are candidates.
     private func newestSiftBarProcess() -> NSRunningApplication? {
         NSRunningApplication
             .runningApplications(withBundleIdentifier: "com.andredias.siftbar")
+            .filter { $0.processIdentifier > 0 && !$0.isTerminated }
             .max {
                 ($0.launchDate ?? .distantPast) < ($1.launchDate ?? .distantPast)
             }
