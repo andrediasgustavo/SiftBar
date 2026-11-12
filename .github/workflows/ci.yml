@@ -137,14 +137,7 @@ jobs:
             xcrun xcresulttool get test-results summary \
               --path build/UI.xcresult >> "$GITHUB_STEP_SUMMARY" 2>&1 || true
 
-            ENCODED="$(python3 - ui-xcuitest.log <<'PY'
-import sys
-import urllib.parse
-text = open(sys.argv[1], encoding="utf-8", errors="replace").read()
-lines = [line for line in text.splitlines() if "error:" in line or "UI Testing Failure" in line or "Testing failed" in line or "failed (" in line]
-print(urllib.parse.quote("\n".join(lines[-20:])[:3500], safe=" "))
-PY
-)"
+            ENCODED="$(python3 -c 'import sys,urllib.parse; t=open("ui-xcuitest.log",encoding="utf-8",errors="replace").read(); ls=[l for l in t.splitlines() if any(k in l for k in ("error:","UI Testing Failure","Testing failed","failed ("))]; print(urllib.parse.quote("\n".join(ls[-20:])[:3500], safe=" "))')"
             echo "::error title=XCUITest failure::${ENCODED}"
           fi
 
