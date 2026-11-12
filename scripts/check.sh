@@ -30,11 +30,16 @@ if xcodebuild -version >/dev/null 2>&1 && command -v xcodegen >/dev/null 2>&1; t
     (
         cd "$ROOT"
         xcodegen generate >/dev/null
-        xcodebuild test \
+        rm -rf "$ROOT/.build/UI.xcresult"
+        if ! xcodebuild test \
             -project SiftBar.xcodeproj \
             -scheme SiftBar \
             -destination 'platform=macOS' \
-            >/dev/null
+            -resultBundlePath "$ROOT/.build/UI.xcresult" \
+            > "$ROOT/.build/xcuitest.log" 2>&1; then
+            tail -60 "$ROOT/.build/xcuitest.log" >&2
+            exit 1
+        fi
     )
 else
     echo "==> XCUITest skipped (needs full Xcode and XcodeGen)"

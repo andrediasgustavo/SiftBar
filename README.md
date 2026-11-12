@@ -262,8 +262,9 @@ and launches it.
 The interaction suite (`Tests/XCUITests/`, generated project via
 `project.yml`) runs with full Xcode and XcodeGen:
 `./scripts/check.sh` runs it automatically when both are installed, and CI
-runs it in the `UI tests (XCUITest)` job. Run `SIFTBAR_SKIP_HOOK=1 git commit`
-to bypass the pre-commit gate once.
+runs it in the `UI tests (XCUITest)` job — first run/Stop, sidebar search,
+risk filter, selection + confirmation sheet, History and the result card.
+Run `SIFTBAR_SKIP_HOOK=1 git commit` to bypass the pre-commit gate once.
 
 ## License
 
