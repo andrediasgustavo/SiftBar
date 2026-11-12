@@ -11,6 +11,14 @@ final class FullDiskAccessTests: XCTestCase {
         XCTAssertEqual(status, .granted)
     }
 
+    func testEmptyReadableProbeMeansGranted() throws {
+        let file = try makeFile(contents: Data())
+
+        let status = FullDiskAccess.status(probes: [.init(path: file.path)])
+
+        XCTAssertEqual(status, .granted)
+    }
+
     func testUnreadableProbeMeansDenied() throws {
         let file = try makeFile()
         try FileManager.default.setAttributes(
@@ -70,12 +78,12 @@ final class FullDiskAccessTests: XCTestCase {
         XCTAssertEqual(status, .denied)
     }
 
-    private func makeFile() throws -> URL {
+    private func makeFile(contents: Data = Data("probe".utf8)) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SiftBarTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let file = directory.appendingPathComponent("probe.db")
-        try Data("probe".utf8).write(to: file)
+        try contents.write(to: file)
         addTeardownBlock {
             try? FileManager.default.removeItem(at: directory)
         }

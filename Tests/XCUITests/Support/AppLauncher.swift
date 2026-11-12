@@ -22,6 +22,10 @@ enum AppLauncher {
         launch(["--show-dashboard", "-SiftBar.hasSeenAccessOnboarding", "YES"])
     }
 
+    static func launchAccessOnboarding() -> XCUIApplication {
+        launch(["--demo", "--demo-access"])
+    }
+
     private static func launch(_ arguments: [String]) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = arguments

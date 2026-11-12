@@ -196,15 +196,17 @@ missing; the app keeps working normally if you choose **Not now**. A small
 **Partial disk map** note stays in the Disk tab so you can complete access
 later.
 
-1. In the sheet, click **Open Full Disk Access**.
-2. Enable **SiftBar** in **System Settings → Privacy & Security → Full Disk
-   Access**.
-3. Return to SiftBar and click **Check again**. If the permission does not take
-   effect immediately, quit SiftBar from the menu bar and open it again.
+1. In the sheet, click **Open Full Disk Settings…**.
+2. In **System Settings → Privacy & Security → Full Disk Access**, click **+**,
+   choose **SiftBar** in Applications, and turn its switch on.
+3. Return to SiftBar and click **Restart & Check Access**. SiftBar closes,
+   reopens, and checks the permission automatically. If access is available,
+   the sheet closes and a fresh analysis starts; there is no separate
+   “Check again” step.
 
-Prefer not to grant Full Disk Access? Open **Other ways to grant access → Use
-folder prompts instead**. macOS will then ask once per protected folder, and
-SiftBar remembers your choice.
+Prefer not to grant Full Disk Access? Choose **Choose Folders Instead…**.
+macOS will then ask once per protected folder, and SiftBar remembers your
+choice.
 
 SiftBar never asks for administrator rights or runs `sudo`.
 
@@ -262,7 +264,8 @@ The interaction suite (`Tests/XCUITests/`, generated project via
 `project.yml`) runs with full Xcode and XcodeGen:
 `./scripts/check.sh` runs it automatically when both are installed, and CI
 runs it in the `UI tests (XCUITest)` job — first run/Stop, sidebar search,
-risk filter, selection + confirmation sheet, History and the result card.
+risk filter, selection + confirmation sheet, History, the result card, and the
+Full Disk Access restart with old/new process verification.
 Run `SIFTBAR_SKIP_HOOK=1 git commit` to bypass the pre-commit gate once.
 
 ## License

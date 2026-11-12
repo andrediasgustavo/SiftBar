@@ -58,6 +58,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if arguments.contains("--demo-access") {
                 AppState.shared.presentAccessSheet()
             }
+            if arguments.contains("--resume-access-check") {
+                AppState.shared.resumeAccessCheckAfterRestart()
+            }
 
             return
         }
@@ -65,10 +68,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if arguments.contains("--show-dashboard") {
             DashboardWindowController.shared.show(state: AppState.shared)
+        }
 
-            if arguments.contains("--analyze") {
-                Task { await AppState.shared.analyze() }
-            }
+        if arguments.contains("--resume-access-check") {
+            AppState.shared.resumeAccessCheckAfterRestart()
+        } else if arguments.contains("--analyze") {
+            Task { await AppState.shared.analyze() }
         }
     }
 }

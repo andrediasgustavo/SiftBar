@@ -52,7 +52,9 @@ struct DashboardView: View {
                 history.isPresented = false
             }
         }
-        .sheet(isPresented: $appState.isAccessSheetPresented) {
+        .sheet(isPresented: $appState.isAccessSheetPresented, onDismiss: {
+            appState.accessSheetDidDismiss()
+        }) {
             AccessOnboardingView(state: appState)
         }
         .onAppear {

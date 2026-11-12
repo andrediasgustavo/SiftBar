@@ -71,12 +71,18 @@ enum FullDiskAccess {
             return (try? fileManager.contentsOfDirectory(atPath: probe.path)) != nil
         }
 
-        guard let handle = FileHandle(forReadingAtPath: probe.path) else {
+        do {
+            let handle = try FileHandle(forReadingFrom: URL(fileURLWithPath: probe.path))
+            defer { try? handle.close() }
+
+            // Opening alone is not enough to prove that protected contents can
+            // be consumed. Read a byte as well; an empty readable file still
+            // proves access, while a TCC-denied read returns an error.
+            _ = try handle.read(upToCount: 1)
+            return true
+        } catch {
             return false
         }
-
-        handle.closeFile()
-        return true
     }
 
     /// Deep-links to Privacy & Security → Full Disk Access. The URL changed

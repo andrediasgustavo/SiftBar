@@ -29,6 +29,8 @@ final class AppState: ObservableObject {
     @Published private(set) var accessStatus: FullDiskAccess.Status = .unknown
     @Published private(set) var includesProtectedFolders = false
     @Published private(set) var accessHint: String?
+    @Published private(set) var hasOpenedAccessSettings = false
+    @Published private(set) var isRestarting = false
     @Published var isAccessSheetPresented = false
 
     private let onboardingKey = "SiftBar.hasSeenAccessOnboarding"
@@ -58,6 +60,16 @@ final class AppState: ObservableObject {
 
     var showsPartialDiskData: Bool {
         !includesProtectedFolders
+    }
+
+    var accessStatusText: String {
+        if accessStatus == .granted {
+            return "Full Disk Access detected"
+        }
+        if includesProtectedFolders {
+            return "Folder-by-folder access enabled"
+        }
+        return "Personal folders not included"
     }
 
     var hasSeenAccessOnboarding: Bool {
@@ -226,6 +238,12 @@ final class AppState: ObservableObject {
     /// Shown once, the first time the dashboard opens. It is optional: the app
     /// already works without it and the user can dismiss it.
     func presentAccessSheetIfNeeded() {
+        #if SIFTBAR_DEMO
+        // Demo access is explicit via --demo-access. Do not let onAppear
+        // refresh the synthetic denied state back to the demo's granted map.
+        if demoMode { return }
+        #endif
+
         refreshAccess()
 
         guard !includesProtectedFolders, !hasSeenAccessOnboarding else { return }
@@ -234,12 +252,23 @@ final class AppState: ObservableObject {
 
     func presentAccessSheet() {
         refreshAccess()
+
+        #if SIFTBAR_DEMO
+        if demoMode {
+            // Screenshots and UI tests need to exercise the state the flow is
+            // asking the user to change, not a contradictory "detected" label.
+            accessStatus = .denied
+            includesProtectedFolders = false
+        }
+        #endif
+
         isAccessSheetPresented = true
     }
 
     func skipAccess() {
         markOnboardingSeen()
         accessHint = nil
+        hasOpenedAccessSettings = false
         isAccessSheetPresented = false
     }
 
@@ -248,52 +277,117 @@ final class AppState: ObservableObject {
     }
 
     func openFullDiskAccessSettings() {
+        hasOpenedAccessSettings = true
+        accessHint = nil
+
+        #if SIFTBAR_DEMO
+        // UI tests exercise the flow without opening System Settings.
+        if demoMode { return }
+        #endif
+
         FullDiskAccess.openSettings()
-        accessHint = "Enable SiftBar in the list. macOS applies the permission only after SiftBar restarts — use Restart SiftBar below."
     }
 
-    func checkAccessAgain() {
-        refreshAccess()
-
-        if includesProtectedFolders {
-            accessHint = nil
-            markOnboardingSeen()
-            isAccessSheetPresented = false
-            Task { await analyze() }
-        } else {
-            accessHint = "Still off. macOS applies Full Disk Access only after SiftBar restarts — use Restart SiftBar below."
-        }
-    }
-
-    /// TCC does not grant a new Full Disk Access permission to an already
-    /// running process: the app must be relaunched. Spawn a short helper that
-    /// reopens the bundle (with the dashboard) after this process exits.
-    func restartApp() {
-        let bundlePath = Bundle.main.bundleURL.path
-
-        guard bundlePath.hasSuffix(".app") else {
-            NSApp.terminate(nil)
+    /// Reopens a new process before ending this one. A new Full Disk Access
+    /// grant is applied to that process, which then checks access automatically.
+    /// Creating the new instance explicitly avoids `open` merely activating the
+    /// old instance, and a launch failure leaves this session untouched.
+    func restartAndCheckAccess() {
+        guard !isRestarting else { return }
+        guard Bundle.main.bundleURL.pathExtension == "app" else {
+            accessHint = "SiftBar can only restart from its app bundle. Open SiftBar.app and try again."
             return
         }
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = [
-            "-c",
-            "sleep 1; /usr/bin/open \"\(bundlePath)\" --args --show-dashboard"
-        ]
+        isRestarting = true
+        accessHint = nil
 
-        try? process.run()
-        NSApp.terminate(nil)
+        // SwiftUI sheets can cancel NSApp.terminate. Launch only from the
+        // sheet's onDismiss callback, when SwiftUI has finished removing the
+        // presentation, instead of racing its dismissal animation.
+        if isAccessSheetPresented {
+            isAccessSheetPresented = false
+        } else {
+            launchRelaunchInstance()
+        }
+    }
+
+    func accessSheetDidDismiss() {
+        guard isRestarting else { return }
+        launchRelaunchInstance()
+    }
+
+    private func launchRelaunchInstance() {
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        configuration.createsNewApplicationInstance = true
+        configuration.arguments = restartArguments
+
+        NSWorkspace.shared.openApplication(
+            at: Bundle.main.bundleURL,
+            configuration: configuration
+        ) { _, error in
+            DispatchQueue.main.async {
+                if let error {
+                    self.isRestarting = false
+                    self.accessHint = "SiftBar could not reopen: \(error.localizedDescription). This session is still open; try again."
+                    self.isAccessSheetPresented = true
+                    return
+                }
+
+                NSApp.terminate(nil)
+            }
+        }
+    }
+
+    /// Entry point used only by the relaunched process. There is no separate
+    /// "check again" action: checking is part of finishing the restart.
+    func resumeAccessCheckAfterRestart() {
+        refreshAccess()
+
+        #if SIFTBAR_DEMO
+        if demoMode {
+            accessHint = nil
+            markOnboardingSeen()
+            isAccessSheetPresented = false
+            return
+        }
+        #endif
+
+        if includesProtectedFolders {
+            completeAccessAndAnalyze()
+        } else {
+            hasOpenedAccessSettings = true
+            accessHint = "SiftBar still cannot read Desktop, Documents and Downloads. Make sure SiftBar is enabled in Full Disk Access, then restart and check again."
+            isAccessSheetPresented = true
+        }
+    }
+
+    private func completeAccessAndAnalyze() {
+        accessHint = nil
+        hasOpenedAccessSettings = false
+        isRestarting = false
+        markOnboardingSeen()
+        isAccessSheetPresented = false
+        Task { await analyze() }
+    }
+
+    private var restartArguments: [String] {
+        var arguments = ["--show-dashboard", "--resume-access-check"]
+
+        #if SIFTBAR_DEMO
+        if demoMode {
+            arguments.append("--demo")
+        }
+        #endif
+
+        return arguments
     }
 
     func useFolderPrompts() {
         FullDiskAccess.setAllowsFolderPrompts(true)
         refreshAccess()
-        accessHint = nil
-        markOnboardingSeen()
-        isAccessSheetPresented = false
-        Task { await analyze() }
+        completeAccessAndAnalyze()
     }
 
     #if SIFTBAR_DEMO
