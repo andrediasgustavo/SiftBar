@@ -253,8 +253,17 @@ and launches it.
 | `./scripts/run.sh` | Build (release), bundle, sign, and launch |
 | `./scripts/build.sh` | Build `dist/SiftBar.app` without launching |
 | `./scripts/test.sh` | Run the test suite without Xcode (local fallback) |
+| `./scripts/ui-smoke.sh` | Snapshot + OCR UI smoke tests (no Xcode needed) |
+| `./scripts/check.sh` | Local gate: unit + UI smoke (+ XCUITest when available) |
+| `./scripts/install-hooks.sh` | Install `check.sh` as the pre-commit hook |
 | `./scripts/package.sh` | Build `dist/SiftBar.dmg` |
 | `./scripts/clean.sh` | Remove `.build/` and `dist/` |
+
+The interaction suite (`Tests/XCUITests/`, generated project via
+`project.yml`) runs with full Xcode and XcodeGen:
+`./scripts/check.sh` runs it automatically when both are installed, and CI
+runs it in the `UI tests (XCUITest)` job. Run `SIFTBAR_SKIP_HOOK=1 git commit`
+to bypass the pre-commit gate once.
 
 ## License
 
