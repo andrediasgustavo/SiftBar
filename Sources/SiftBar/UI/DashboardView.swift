@@ -273,10 +273,11 @@ struct DashboardView: View {
                 }
                 .buttonStyle(.bordered)
                 .help("Show action history (⌘Y)")
+                .accessibilityIdentifier("header.history")
 
                 // The first-run screen owns the only primary action while no
                 // report exists; showing both would duplicate the button.
-                if appState.report != nil {
+                if DashboardPresentation.showsHeaderAnalyze(report: appState.report) {
                     Button {
                         Task { await appState.analyze() }
                     } label: {
@@ -284,6 +285,7 @@ struct DashboardView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(isBusy || appState.isScanning)
+                    .accessibilityIdentifier("header.analyze")
                 }
             }
 
@@ -525,6 +527,7 @@ struct DashboardView: View {
                         }
                         .buttonStyle(.borderedProminent)
                         .disabled(actions.isRunning || appState.isScanning)
+                        .accessibilityIdentifier("action-bar.apply")
                     }
                 }
                 .padding(.horizontal, 24)

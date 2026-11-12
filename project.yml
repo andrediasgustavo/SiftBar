@@ -1,0 +1,64 @@
+# XcodeGen spec for the XCUITest suite.
+#
+# The app itself is built with scripts/build.sh (direct swiftc, no Xcode).
+# This project exists only so CI runners with full Xcode can drive real UI
+# interaction tests. Generated SiftBar.xcodeproj is gitignored.
+#
+#   brew install xcodegen
+#   xcodegen generate
+#   xcodebuild test -project SiftBar.xcodeproj -scheme SiftBar -destination 'platform=macOS'
+
+name: SiftBar
+
+options:
+  bundleIdPrefix: com.andredias
+  deploymentTarget:
+    macOS: "13.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    # Ad-hoc "Sign to Run Locally": no developer certificate or team needed
+    # for CI (and for local runs once Xcode is installed).
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  SiftBar:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/SiftBar
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.andredias.siftbar
+        INFOPLIST_FILE: Resources/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        # The UI tests rely on the deterministic --demo states.
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: SIFTBAR_DEMO
+        ENABLE_HARDENED_RUNTIME: NO
+
+  SiftBarUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: Tests/XCUITests
+    dependencies:
+      - target: SiftBar
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.andredias.siftbar.uitests
+        TEST_TARGET_NAME: SiftBar
+
+schemes:
+  SiftBar:
+    build:
+      targets:
+        SiftBar: all
+        SiftBarUITests: [test]
+    test:
+      targets:
+        - SiftBarUITests
+      gatherCoverageData: false

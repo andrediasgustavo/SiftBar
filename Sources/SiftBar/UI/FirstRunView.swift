@@ -44,6 +44,7 @@ struct FirstRunView: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .disabled(isBusy)
+            .accessibilityIdentifier("first-run.analyze")
 
             Text("You can run it again at any time from the menu bar or with ⌘R.")
                 .font(.caption2)

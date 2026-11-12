@@ -16,7 +16,6 @@ struct MenuContentView: View {
             .font(.caption.weight(.medium))
             .foregroundStyle(.secondary)
             .accessibilityLabel(statusText)
-
         Divider()
 
         Button("Open Dashboard") {
@@ -48,32 +47,25 @@ struct MenuContentView: View {
     }
 
     private var statusDot: String {
-        if appState.isScanning || appState.isApplying { return "🟠" }
-        guard let report = appState.report else { return "⚪️" }
-
-        let findings = report.items.filter { !$0.isInformational }
-        if findings.contains(where: { $0.risk == .dangerous }) { return "🔴" }
-        if findings.contains(where: { $0.risk == .caution }) { return "🟠" }
-        return "🟢"
+        MenuStatus.dot(
+            isScanning: appState.isScanning,
+            isApplying: appState.isApplying,
+            report: appState.report
+        )
     }
 
     private var statusText: String {
-        if appState.isScanning { return "Analyzing…" }
-        if appState.isApplying { return "Applying…" }
-        guard let report = appState.report else { return "Ready to analyze" }
-
-        let findings = report.items.filter { !$0.isInformational }
-        let review = findings.filter { $0.risk != .safe }.count
-        if review == 0 {
-            return "All clear · \(findings.count) findings"
-        }
-
-        return "\(review) need review · \(findings.count) findings"
+        MenuStatus.text(
+            isScanning: appState.isScanning,
+            isApplying: appState.isApplying,
+            report: appState.report
+        )
     }
 
     private var menuAnalyzeLabel: String {
-        if appState.isScanning { return "Analyzing…" }
-        if appState.isApplying { return "Applying…" }
-        return "Run Analysis"
+        MenuStatus.analyzeLabel(
+            isScanning: appState.isScanning,
+            isApplying: appState.isApplying
+        )
     }
 }

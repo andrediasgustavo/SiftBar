@@ -47,8 +47,12 @@ final class AppState: ObservableObject {
     private var deletedPaths: [String: Date] = [:]
     private static let tombstoneLifetime: TimeInterval = 120
 
-    private init() {
-        refreshAccess()
+    /// `refreshAccess: false` keeps UI/snapshot tests deterministic and avoids
+    /// probing the user's TCC state when only layout is under test.
+    init(refreshAccess: Bool = true) {
+        if refreshAccess {
+            self.refreshAccess()
+        }
     }
 
     var showsPartialDiskData: Bool {
