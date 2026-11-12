@@ -87,6 +87,20 @@ enum CommandRunner {
                     execute: hardItem
                 )
 
+                // Cancellation can land between the `isCancelled` check at the
+                // top of `run` and the installation of the cancellation
+                // handler. Do not launch (or keep) a child in that window, or
+                // the caller would wait for the full timeout.
+                if Task.isCancelled {
+                    terminateItem.cancel()
+                    killItem.cancel()
+                    hardItem.cancel()
+                    resumeGuard.perform {
+                        continuation.resume(throwing: CancellationError())
+                    }
+                    return
+                }
+
                 do {
                     try process.run()
                 } catch {
@@ -97,6 +111,15 @@ enum CommandRunner {
                         continuation.resume(throwing: CommandError.launchFailed(error.localizedDescription))
                     }
                     return
+                }
+
+                if Task.isCancelled {
+                    process.terminate()
+                    queue.asyncAfter(deadline: .now() + Self.killGrace) {
+                        if process.isRunning {
+                            kill(process.processIdentifier, SIGKILL)
+                        }
+                    }
                 }
 
                 // Drain both pipes before waiting for the process. This prevents
