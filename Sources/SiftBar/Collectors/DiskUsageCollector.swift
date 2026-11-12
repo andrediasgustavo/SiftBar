@@ -46,6 +46,21 @@ struct DiskUsageCollector: Collector {
             let path: String
             let timeout: TimeInterval
             let include: Bool
+            let ignoring: [String]
+
+            init(
+                key: String,
+                path: String,
+                timeout: TimeInterval,
+                include: Bool,
+                ignoring: [String] = []
+            ) {
+                self.key = key
+                self.path = path
+                self.timeout = timeout
+                self.include = include
+                self.ignoring = ignoring
+            }
         }
 
         var measurements: [Measurement] = [
@@ -92,7 +107,19 @@ struct DiskUsageCollector: Collector {
                 timeout: 10,
                 include: true
             ),
-            Measurement(key: "systemLibrary", path: "/Library", timeout: 30, include: true),
+            // Xcode's simulator runtimes alone can be tens of GB and walking
+            // them takes far longer than the rest of /Library (30s+ on a Mac
+            // with several runtimes installed). Exclude the developer
+            // toolchain: those bytes stay in the "System & other" remainder,
+            // and the simulator caches are listed separately by the Caches
+            // tab.
+            Measurement(
+                key: "systemLibrary",
+                path: "/Library",
+                timeout: 12,
+                include: true,
+                ignoring: ["Developer"]
+            ),
             Measurement(key: "android", path: "\(home)/.android", timeout: 15, include: true),
             Measurement(key: "gradle", path: "\(home)/.gradle", timeout: 15, include: true),
             Measurement(key: "npm", path: "\(home)/.npm", timeout: 15, include: true),
@@ -134,7 +161,8 @@ struct DiskUsageCollector: Collector {
                         guard measurement.include else { return (measurement.key, 0) }
                         let bytes = await PathSizer.sizeInBytes(
                             of: measurement.path,
-                            timeout: measurement.timeout
+                            timeout: measurement.timeout,
+                            ignoringNames: measurement.ignoring
                         ) ?? 0
                         return (measurement.key, bytes)
                     }
@@ -301,8 +329,8 @@ struct DiskUsageCollector: Collector {
         categories.append(Category(
             name: "System-wide data",
             bytes: sizes.systemLibrary,
-            detail: "Support files and caches installed in /Library.",
-            evidence: ["du -d 1 -k /Library"]
+            detail: "Support files and caches installed in /Library. Developer tooling (Xcode simulators) is measured separately by the Caches tab and stays in System & other.",
+            evidence: ["du -sk -I Developer /Library"]
         ))
 
         let measured = sum(categories.map { $0.bytes })

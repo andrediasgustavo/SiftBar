@@ -167,6 +167,32 @@ final class PathSizerTests: XCTestCase {
         XCTAssertFalse(filtered.contains { $0.path == photos.standardizedFileURL.path })
     }
 
+    func testSizeInBytesCanIgnoreAnExpensiveChild() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SiftBarTests-\(UUID().uuidString)", isDirectory: true)
+        let keep = directory.appendingPathComponent("Keep", isDirectory: true)
+        let skip = directory.appendingPathComponent("Skip", isDirectory: true)
+        try FileManager.default.createDirectory(at: keep, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: skip, withIntermediateDirectories: true)
+        try Data(repeating: 0xAB, count: 1_000_000).write(to: keep.appendingPathComponent("keep.bin"))
+        try Data(repeating: 0xCD, count: 4_000_000).write(to: skip.appendingPathComponent("skip.bin"))
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let full = await PathSizer.sizeInBytes(of: directory.path, cache: .disabled)
+        let filtered = await PathSizer.sizeInBytes(
+            of: directory.path,
+            cache: .disabled,
+            ignoringNames: ["Skip"]
+        )
+
+        let fullBytes = try XCTUnwrap(full)
+        let filteredBytes = try XCTUnwrap(filtered)
+        XCTAssertGreaterThan(fullBytes, filteredBytes)
+        XCTAssertGreaterThan(filteredBytes, 0)
+    }
+
     func testSizesOfChildrenCanExcludeSensitiveFolders() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SiftBarTests-\(UUID().uuidString)", isDirectory: true)

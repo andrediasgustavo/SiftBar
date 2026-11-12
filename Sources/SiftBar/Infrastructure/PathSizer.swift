@@ -10,10 +10,15 @@ enum PathSizer {
     ///
     /// A recent measurement with the same directory signature is reused so the
     /// post-action refresh does not walk the same tree again.
+    ///
+    /// `ignoringNames` is passed to `du -I`: useful for folders whose name is
+    /// expensive to walk and not needed here (for example Xcode's simulator
+    /// runtimes inside a system folder).
     static func sizeInBytes(
         of path: String,
         timeout: TimeInterval = 20,
-        cache: SizeCache = .shared
+        cache: SizeCache = .shared,
+        ignoringNames: [String] = []
     ) async -> Int64? {
         guard FileManager.default.fileExists(atPath: path) else { return nil }
 
@@ -22,9 +27,16 @@ enum PathSizer {
             return cached
         }
 
+        var arguments = ["-sk"]
+        for name in ignoringNames {
+            arguments.append("-I")
+            arguments.append(name)
+        }
+        arguments.append(path)
+
         guard let result = try? await CommandRunner.run(
             "/usr/bin/du",
-            arguments: ["-sk", path],
+            arguments: arguments,
             timeout: timeout
         ) else { return nil }
 
