@@ -98,17 +98,28 @@ if [ "$FAILED" -ne 0 ]; then
     fi
 
     if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-        # Annotations are visible on the public run page without a GitHub
-        # session, unlike the step summary and raw logs.
-        ENCODED="$(python3 - "$LOG" <<'PY'
+        # One annotation per failed scenario: annotations are visible on the
+        # public run page without a GitHub session, unlike the step summary.
+        python3 - "$LOG" <<'PY'
 import sys
 import urllib.parse
-text = open(sys.argv[1], encoding="utf-8", errors="replace").read()
-tail = "\n".join(text.splitlines()[-40:])
-print(urllib.parse.quote(tail, safe=" ")[:3500])
+
+blocks = []
+current = None
+for raw in open(sys.argv[1], encoding="utf-8", errors="replace"):
+    line = raw.rstrip("\n")
+    if line.startswith("FAIL "):
+        current = {"name": line[5:], "lines": []}
+        blocks.append(current)
+    elif line == "--- end OCR ---":
+        current = None
+    elif current is not None and not line.startswith("--- OCR text ---"):
+        current["lines"].append(line)
+
+for block in blocks:
+    message = urllib.parse.quote("\n".join(block["lines"])[:1500], safe=" ")
+    print(f"::error title=UI smoke: {block['name']}::{message}")
 PY
-)"
-        echo "::error title=UI smoke failure::${ENCODED}"
     fi
 fi
 

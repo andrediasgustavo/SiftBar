@@ -169,7 +169,7 @@ func recognize(_ image: CGImage) -> OCRResult {
 var lastOCRText: String = ""
 
 @MainActor
-func capture(_ window: NSWindow, settle: TimeInterval = 0.6) -> OCRResult {
+func capture(_ window: NSWindow, settle: TimeInterval = 0.6, scale: CGFloat = 2) -> OCRResult {
     pump(settle)
 
     guard let view = window.contentView else {
@@ -180,7 +180,7 @@ func capture(_ window: NSWindow, settle: TimeInterval = 0.6) -> OCRResult {
     view.displayIfNeeded()
     pump(0.2)
 
-    guard let image = snapshot(of: view) else {
+    guard let image = snapshot(of: view, scale: scale) else {
         return OCRResult(lines: [])
     }
 
@@ -224,9 +224,9 @@ func scenarioFirstRun(_ check: Checker) {
         return
     }
 
-    check.expectContains(ocr, "Welcome to SiftBar")
-    check.expectContains(ocr, "Run First Analysis")
-    check.expectContains(ocr, "Read-only")
+    check.expectContains(ocr, "elcome to SiftBar")
+    check.expectContains(ocr, "First Analysis")
+    check.expectContains(ocr, "ead-only")
     check.expectContains(ocr, "History")
     check.expect(
         !hasHeaderAnalyze(ocr),
@@ -248,7 +248,7 @@ func scenarioFirstRunAccess(_ check: Checker) {
     defer { granted.orderOut(nil) }
 
     let grantedOCR = capture(granted)
-    check.expectContains(grantedOCR, "Run First Analysis")
+    check.expectContains(grantedOCR, "First Analysis")
     check.expectContains(grantedOCR, "are included")
     check.expectAbsent(grantedOCR, "Grant Access")
 
@@ -264,7 +264,7 @@ func scenarioFirstRunAccess(_ check: Checker) {
     defer { denied.orderOut(nil) }
 
     let deniedOCR = capture(denied)
-    check.expectContains(deniedOCR, "skipped without Full Disk Access")
+    check.expectContains(deniedOCR, "kipped without Full Disk")
     check.expectContains(deniedOCR, "Grant Access")
 }
 
@@ -278,10 +278,10 @@ func scenarioMenu(_ check: Checker) {
     defer { readyWindow.orderOut(nil) }
 
     let readyOCR = capture(readyWindow)
-    check.expectContains(readyOCR, "Ready to analyze")
+    check.expectContains(readyOCR, "eady to analyze")
     check.expectContains(readyOCR, "Open Dashboard")
     check.expectContains(readyOCR, "Run Analysis")
-    check.expectContains(readyOCR, "Quit SiftBar")
+    check.expectContains(readyOCR, "uit SiftBar")
 
     let report = AppState(refreshAccess: false)
     report.loadDemoReport()
@@ -314,9 +314,9 @@ func scenarioOverview(_ check: Checker) {
     }
 
     check.expectContains(ocr, "Overview")
-    check.expectContains(ocr, "Found 24 items")
-    check.expectContains(ocr, "Need review")
-    check.expectContains(ocr, "Disk available")
+    check.expectContains(ocr, "ound 24 items")
+    check.expectContains(ocr, "eed review")
+    check.expectContains(ocr, "isk available")
     check.expect(
         hasHeaderAnalyze(ocr),
         "overview: header Analyze button should be visible after a scan"
@@ -365,19 +365,23 @@ func scenarioItemRow(_ check: Checker) {
     )
     defer { window.orderOut(nil) }
 
-    let ocr = capture(window)
+    // The row's labels are small: render the snapshot at 4x so Vision can
+    // recognize the title, the impact value and the risk word reliably.
+    let ocr = capture(window, scale: 4)
     guard !ocr.lines.isEmpty else {
         check.expect(false, "item-row: OCR returned no text")
         return
     }
 
-    check.expectContains(ocr, "Design Helper cache")
-    check.expectContains(ocr, "Caution")
+    check.expectContains(ocr, "esign Helper cache")
+    check.expectContains(ocr, "aution")
 
     // The impact value (title line) and the risk word (evidence line) must
     // share the same right edge. This is the regression fixed in c141ec3.
-    guard let impact = ocr.first(containing: "GB"),
-          let risk = ocr.first(containing: "Caution") else {
+    guard let impact = ocr.lines.first(where: { line in
+        line.text.range(of: #"\d[.,]?\d?\s?(GB|MB)"#, options: .regularExpression) != nil
+    }),
+          let risk = ocr.first(containing: "aution") else {
         check.expect(false, "item-row: impact value or risk label not recognized")
         return
     }

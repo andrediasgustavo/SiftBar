@@ -47,12 +47,22 @@ struct BasePage {
     }
 
     /// Menus and pickers keep working even when SwiftUI moves the identifier
-    /// to a parent element: look the control up by identifier first, then by
-    /// its visible label.
-    func control(_ query: XCUIElementQuery, identifier: String, label: String, timeout: TimeInterval = 10) -> XCUIElement {
-        let byId = query[identifier]
-        if byId.waitForExistence(timeout: 1) { return byId }
-        return require(query[label], timeout: timeout)
+    /// to a parent element or exposes the control under a different element
+    /// type on another OS/SDK. Look the control up by identifier first (in
+    /// every query), then by its visible label.
+    func control(_ queries: [XCUIElementQuery], identifier: String, label: String, timeout: TimeInterval = 10) -> XCUIElement {
+        for query in queries {
+            let byId = query[identifier]
+            if byId.waitForExistence(timeout: 1) { return byId }
+        }
+
+        for query in queries {
+            let byLabel = query[label]
+            if byLabel.waitForExistence(timeout: 1) { return byLabel }
+        }
+
+        // Let require() produce a useful failure message.
+        return queries[0][identifier]
     }
 
     func assertLabel(_ element: XCUIElement, _ expected: String, file: StaticString = #filePath, line: UInt = #line) {

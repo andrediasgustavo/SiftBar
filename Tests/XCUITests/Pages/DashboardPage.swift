@@ -9,10 +9,10 @@ struct DashboardPage {
     var headerHistory: XCUIElement { app.buttons["header.history"] }
     var searchField: XCUIElement { app.searchFields["filter.search"] }
     var riskPicker: XCUIElement {
-        base.control(app.popUpButtons, identifier: "filter.risk", label: "Risk")
+        base.control([app.popUpButtons], identifier: "filter.risk", label: "Risk")
     }
     var selectMenu: XCUIElement {
-        base.control(app.menuButtons, identifier: "filter.select", label: "Select")
+        base.control([app.menuButtons, app.popUpButtons], identifier: "filter.select", label: "Select")
     }
     var resetFilter: XCUIElement { base.linkOrButton("filter.reset") }
     var applyButton: XCUIElement { app.buttons["action-bar.apply"] }
