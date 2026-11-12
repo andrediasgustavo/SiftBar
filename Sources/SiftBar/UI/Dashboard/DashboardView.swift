@@ -111,6 +111,7 @@ struct DashboardView: View {
                     .badge(badge(allMetrics.findings))
                     .tag(ReviewPage.overview)
                     .contentShape(Rectangle())
+                    .accessibilityIdentifier("sidebar.overview")
                     .onTapGesture { page.selection = .overview }
 
                 ForEach(Self.sidebarSections) { section in
@@ -175,6 +176,7 @@ struct DashboardView: View {
             .badge(badge(count(of: category)))
             .tag(ReviewPage.category(category))
             .contentShape(Rectangle())
+            .accessibilityIdentifier("sidebar.\(category.rawValue)")
             .onTapGesture { page.selection = .category(category) }
     }
 
@@ -330,6 +332,7 @@ struct DashboardView: View {
             }
             .labelsHidden()
             .frame(width: 135)
+            .accessibilityIdentifier("filter.risk")
 
             Menu("Select") {
                 Button("None") { actions.clear() }
@@ -338,12 +341,14 @@ struct DashboardView: View {
             }
             .frame(width: 80)
             .disabled(isBusy)
+            .accessibilityIdentifier("filter.select")
 
             Spacer(minLength: 0)
 
             if filter.isActive {
                 Button("Reset") { filter.reset() }
                     .buttonStyle(.link)
+                    .accessibilityIdentifier("filter.reset")
             }
         }
         .padding(.top, 12)
@@ -514,12 +519,14 @@ struct DashboardView: View {
                          : "\(selected.count) of \(changeable.count) selected")
                         .font(.callout)
                         .foregroundStyle(selected.isEmpty ? Color.secondary : Color.primary)
+                        .accessibilityIdentifier("action-bar.status")
 
                     Spacer(minLength: 8)
 
                     if !selected.isEmpty {
                         Button("Deselect") { actions.clear() }
                             .buttonStyle(.link)
+                            .accessibilityIdentifier("action-bar.deselect")
 
                         Button(ActionExecutor.title(for: selected)) {
                             guard !isBusy else { return }
@@ -1102,6 +1109,7 @@ struct DashboardView: View {
                     Text(headline)
                         .font(.title3.weight(.semibold))
                         .monospacedDigit()
+                        .accessibilityIdentifier("result.headline")
 
                     Text(detail)
                         .font(.callout)
@@ -1112,8 +1120,11 @@ struct DashboardView: View {
 
                 Button("Dismiss") { actions.dismissSummary() }
                     .buttonStyle(.link)
+                    .accessibilityIdentifier("result.dismiss")
             }
-            .accessibilityElement(children: .combine)
+            // Do not combine the children: that would swallow the Dismiss
+            // button into the headline element, hiding it from VoiceOver and
+            // from UI tests.
 
             if actions.failedCount > 0 {
                 HStack(spacing: 14) {
@@ -1155,6 +1166,7 @@ struct DashboardView: View {
                 }
                 .buttonStyle(.link)
                 .font(.callout)
+                .accessibilityIdentifier("result.show-trash")
             }
         }
         .padding(14)

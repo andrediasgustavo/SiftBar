@@ -26,7 +26,9 @@ def main() -> int:
     output = pathlib.Path(sys.argv[2])
 
     entries = []
-    for path in sorted(tests_dir.glob("*.swift")):
+    # Tests are organised in subfolders by area; rglob keeps the runner in
+    # sync wherever a new test file lands.
+    for path in sorted(tests_dir.rglob("*.swift")):
         text = path.read_text(encoding="utf-8")
         classes = TEST_CLASS.findall(text)
         if not classes:

@@ -47,6 +47,7 @@ enum CommandRunner {
         if Task.isCancelled { throw CancellationError() }
 
         let box = ProcessBox()
+        let continuationBox = ContinuationBox()
 
         let result = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<CommandResult, Error>) in
@@ -59,7 +60,7 @@ enum CommandRunner {
                 process.standardOutput = stdoutPipe
                 process.standardError = stderrPipe
 
-                let resumeGuard = ResumeGuard()
+                continuationBox.set(continuation)
                 let timeoutFlag = TimeoutFlag()
                 let queue = DispatchQueue.global(qos: .userInitiated)
 
@@ -75,9 +76,7 @@ enum CommandRunner {
                 let hardItem = DispatchWorkItem {
                     // The child may still hold the pipe (for example a `du`
                     // spawned by `find`). Never leave the caller waiting on it.
-                    resumeGuard.perform {
-                        continuation.resume(throwing: CommandError.timedOut(timeout))
-                    }
+                    continuationBox.resume(with: .failure(CommandError.timedOut(timeout)))
                 }
 
                 queue.asyncAfter(deadline: .now() + timeout, execute: terminateItem)
@@ -95,9 +94,7 @@ enum CommandRunner {
                     terminateItem.cancel()
                     killItem.cancel()
                     hardItem.cancel()
-                    resumeGuard.perform {
-                        continuation.resume(throwing: CancellationError())
-                    }
+                    continuationBox.resume(with: .failure(CancellationError()))
                     return
                 }
 
@@ -107,9 +104,9 @@ enum CommandRunner {
                     terminateItem.cancel()
                     killItem.cancel()
                     hardItem.cancel()
-                    resumeGuard.perform {
-                        continuation.resume(throwing: CommandError.launchFailed(error.localizedDescription))
-                    }
+                    continuationBox.resume(
+                        with: .failure(CommandError.launchFailed(error.localizedDescription))
+                    )
                     return
                 }
 
@@ -133,19 +130,15 @@ enum CommandRunner {
                     hardItem.cancel()
 
                     if timeoutFlag.didTimeOut {
-                        resumeGuard.perform {
-                            continuation.resume(throwing: CommandError.timedOut(timeout))
-                        }
+                        continuationBox.resume(with: .failure(CommandError.timedOut(timeout)))
                         return
                     }
 
-                    resumeGuard.perform {
-                        continuation.resume(returning: CommandResult(
-                            stdout: String(data: stdoutData, encoding: .utf8) ?? "",
-                            stderr: String(data: stderrData, encoding: .utf8) ?? "",
-                            exitCode: process.terminationStatus
-                        ))
-                    }
+                    continuationBox.resume(with: .success(CommandResult(
+                        stdout: String(data: stdoutData, encoding: .utf8) ?? "",
+                        stderr: String(data: stderrData, encoding: .utf8) ?? "",
+                        exitCode: process.terminationStatus
+                    )))
                 }
             }
         } onCancel: {
@@ -154,13 +147,23 @@ enum CommandRunner {
             // timeout. A child that ignores SIGTERM is killed after the grace
             // period.
             let process = box.process
-            guard process.isRunning else { return }
-            process.terminate()
+            if process.isRunning {
+                process.terminate()
 
-            DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + Self.killGrace) {
-                if process.isRunning {
-                    kill(process.processIdentifier, SIGKILL)
+                DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + Self.killGrace) {
+                    if process.isRunning {
+                        kill(process.processIdentifier, SIGKILL)
+                    }
                 }
+            }
+
+            // Hard guarantee: cancellation never waits for a stuck pipe (a
+            // grandchild of `find -exec du` can keep the file handle open).
+            // If the reader has not completed by now, resume directly.
+            DispatchQueue.global(qos: .userInitiated).asyncAfter(
+                deadline: .now() + Self.killGrace + Self.hardCap
+            ) {
+                continuationBox.resume(with: .failure(CancellationError()))
             }
         }
 
@@ -173,17 +176,30 @@ private final class ProcessBox: @unchecked Sendable {
     let process = Process()
 }
 
-private final class ResumeGuard: @unchecked Sendable {
+/// Single-resume guard shared by the reader, the timeout escalation and the
+/// cancellation handler. The first resume wins; later ones are no-ops.
+private final class ContinuationBox: @unchecked Sendable {
     private let lock = NSLock()
+    private var continuation: CheckedContinuation<CommandResult, Error>?
     private var didResume = false
 
-    func perform(_ body: () -> Void) {
+    func set(_ continuation: CheckedContinuation<CommandResult, Error>) {
         lock.lock()
         defer { lock.unlock() }
+        self.continuation = continuation
+    }
 
-        guard !didResume else { return }
+    func resume(with result: Result<CommandResult, Error>) {
+        lock.lock()
+        guard !didResume, let continuation else {
+            lock.unlock()
+            return
+        }
         didResume = true
-        body()
+        let stored = continuation
+        self.continuation = nil
+        lock.unlock()
+        stored.resume(with: result)
     }
 }
 

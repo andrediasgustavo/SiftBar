@@ -41,6 +41,7 @@ struct HistoryView: View {
 
             Button("Done", action: onClose)
                 .keyboardShortcut(.defaultAction)
+                .accessibilityIdentifier("history.done")
         }
         .padding(20)
     }

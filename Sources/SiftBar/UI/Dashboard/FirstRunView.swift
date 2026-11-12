@@ -155,6 +155,7 @@ struct FirstRunView: View {
                     .buttonStyle(.link)
                     .font(.caption)
                     .fixedSize()
+                    .accessibilityIdentifier("first-run.grant-access")
             }
         }
     }

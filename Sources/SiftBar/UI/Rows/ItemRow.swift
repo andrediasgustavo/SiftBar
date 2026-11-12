@@ -175,6 +175,7 @@ struct ItemRow: View {
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(item.risk == .dangerous ? Color(nsColor: .systemRed) : Color.secondary)
                 .lineLimit(1)
+                .accessibilityIdentifier("row.risk.\(item.title)")
         }
         .help("Source and command")
     }
@@ -193,6 +194,7 @@ struct ItemRow: View {
             }
             .buttonStyle(.plain)
             .disabled(controlsDisabled)
+            .accessibilityIdentifier("row.select.\(item.title)")
             .accessibilityLabel(
                 isSelected
                     ? "Deselect \(item.title), \(accessibilityRisk)"

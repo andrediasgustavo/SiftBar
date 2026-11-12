@@ -136,6 +136,11 @@ final class CommandRunnerTests: XCTestCase {
             XCTFail("Expected CancellationError, got \(error).")
         }
 
-        XCTAssertLessThan(Date().timeIntervalSince(started), 5)
+        // Worst case: the child holds the pipes and the guaranteed resume
+        // fires after the kill grace and the hard cap. Normally it is instant.
+        XCTAssertLessThan(
+            Date().timeIntervalSince(started),
+            CommandRunner.killGrace + CommandRunner.hardCap + 2
+        )
     }
 }

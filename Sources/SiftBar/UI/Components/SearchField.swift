@@ -15,6 +15,7 @@ struct SearchField: NSViewRepresentable {
         field.sendsSearchStringImmediately = true
         field.delegate = context.coordinator
         field.setAccessibilityLabel(placeholder)
+        field.setAccessibilityIdentifier("filter.search")
         context.coordinator.lastFocusToken = focusToken
         return field
     }

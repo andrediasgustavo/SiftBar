@@ -84,6 +84,7 @@ struct ActionConfirmationView: View {
 
             Button("Cancel", action: onCancel)
                 .keyboardShortcut(.cancelAction)
+                .accessibilityIdentifier("sheet.cancel")
 
             // Destructive actions must not be the default button: HIG asks for
             // the primary role to stay on a non-destructive choice so Return
@@ -92,6 +93,7 @@ struct ActionConfirmationView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.red)
                 .disabled(isRunning)
+                .accessibilityIdentifier("sheet.confirm")
         }
     }
 

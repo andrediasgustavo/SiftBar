@@ -37,6 +37,7 @@ struct ScanWorkspaceView: View {
                 .buttonStyle(.bordered)
                 .keyboardShortcut(.cancelAction)
                 .help("Stop the analysis and keep your Mac unchanged")
+                .accessibilityIdentifier("scan.stop")
                 .padding(.top, 2)
 
             Spacer(minLength: 0)
