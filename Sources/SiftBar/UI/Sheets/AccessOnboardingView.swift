@@ -43,7 +43,7 @@ struct AccessOnboardingView: View {
 
             Divider()
 
-            Text("macOS protects each of those folders separately. Full Disk Access is a single macOS permission that covers all three. SiftBar only uses it for the disk scan.")
+            Text("macOS protects each of those folders separately. Full Disk Access is a single macOS permission that covers all three. SiftBar only uses it for the disk scan. After enabling it, SiftBar must restart to pick up the permission.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -68,13 +68,29 @@ struct AccessOnboardingView: View {
                         state.checkAccessAgain()
                     }
                     .buttonStyle(.bordered)
-                }
 
-                Button("Open Full Disk Access") {
-                    state.openFullDiskAccessSettings()
+                    // TCC only applies a new Full Disk Access grant after the
+                    // process restarts, so "Check again" alone can never work
+                    // in the running app. Restart is the actual next step.
+                    Button("Restart SiftBar") {
+                        state.restartApp()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .fixedSize()
+                    .accessibilityIdentifier("access.restart")
+
+                    Button("Open Full Disk Access") {
+                        state.openFullDiskAccessSettings()
+                    }
+                    .buttonStyle(.bordered)
+                    .fixedSize()
+                } else {
+                    Button("Open Full Disk Access") {
+                        state.openFullDiskAccessSettings()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .fixedSize()
                 }
-                .buttonStyle(.borderedProminent)
-                .fixedSize()
             }
 
             HStack(alignment: .firstTextBaseline, spacing: 10) {

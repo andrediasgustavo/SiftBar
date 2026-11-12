@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftUI
 
@@ -248,7 +249,7 @@ final class AppState: ObservableObject {
 
     func openFullDiskAccessSettings() {
         FullDiskAccess.openSettings()
-        accessHint = "Enable SiftBar in the list, then click Check again. If it does not update, quit and reopen SiftBar."
+        accessHint = "Enable SiftBar in the list. macOS applies the permission only after SiftBar restarts — use Restart SiftBar below."
     }
 
     func checkAccessAgain() {
@@ -260,8 +261,30 @@ final class AppState: ObservableObject {
             isAccessSheetPresented = false
             Task { await analyze() }
         } else {
-            accessHint = "Still off. After enabling it, you may need to quit and reopen SiftBar."
+            accessHint = "Still off. macOS applies Full Disk Access only after SiftBar restarts — use Restart SiftBar below."
         }
+    }
+
+    /// TCC does not grant a new Full Disk Access permission to an already
+    /// running process: the app must be relaunched. Spawn a short helper that
+    /// reopens the bundle (with the dashboard) after this process exits.
+    func restartApp() {
+        let bundlePath = Bundle.main.bundleURL.path
+
+        guard bundlePath.hasSuffix(".app") else {
+            NSApp.terminate(nil)
+            return
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = [
+            "-c",
+            "sleep 1; /usr/bin/open \"\(bundlePath)\" --args --show-dashboard"
+        ]
+
+        try? process.run()
+        NSApp.terminate(nil)
     }
 
     func useFolderPrompts() {
