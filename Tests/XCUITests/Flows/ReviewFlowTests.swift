@@ -60,4 +60,29 @@ final class ReviewFlowTests: SiftBarFlowTestCase {
         dashboard.deselectAll()
         dashboard.verifyStatus("items can be changed")
     }
+
+    /// Regression cover for c141ec3: the hover-only Finder button used to
+    /// reserve width after the risk word, pushing it left of the impact value.
+    func testRiskLabelAlignsWithTheImpactValue() {
+        let app = AppLauncher.launchDemo(["--demo-page", "caches"])
+        let dashboard = DashboardPage(app: app)
+
+        dashboard.waitToLoad(page: "Caches")
+
+        let title = "Design Helper cache"
+        let impact = app.staticTexts["row.impact.\(title)"]
+        let risk = app.staticTexts["row.risk.\(title)"]
+
+        dashboard.base.require(impact, timeout: 15)
+        dashboard.base.require(risk, timeout: 5)
+        dashboard.base.assertValueContains(impact, "GB")
+        dashboard.base.assertValueContains(risk, "Caution")
+
+        XCTAssertEqual(
+            impact.frame.maxX,
+            risk.frame.maxX,
+            accuracy: 1,
+            "the risk label must share the impact value's right edge"
+        )
+    }
 }

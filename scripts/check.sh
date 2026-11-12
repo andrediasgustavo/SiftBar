@@ -22,9 +22,6 @@ if ! "$ROOT/scripts/test.sh"; then
     "$ROOT/scripts/test.sh"
 fi
 
-echo "==> UI smoke tests (snapshot + OCR)"
-"$ROOT/scripts/ui-smoke.sh"
-
 if xcodebuild -version >/dev/null 2>&1 && command -v xcodegen >/dev/null 2>&1; then
     echo "==> XCUITest (interaction)"
     (

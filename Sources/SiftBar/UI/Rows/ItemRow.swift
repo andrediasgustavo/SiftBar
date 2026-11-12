@@ -98,6 +98,7 @@ struct ItemRow: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .frame(minWidth: 70, alignment: .trailing)
+                .accessibilityIdentifier("row.impact.\(item.title)")
         }
     }
 

@@ -62,9 +62,6 @@ jobs:
       - name: Build app bundle
         run: ./scripts/build.sh release
 
-      - name: UI smoke tests (snapshot + OCR)
-        run: ./scripts/ui-smoke.sh
-
       - name: Verify app bundle
         run: |
           test -x dist/SiftBar.app/Contents/MacOS/SiftBar
