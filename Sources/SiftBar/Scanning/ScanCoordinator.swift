@@ -39,6 +39,7 @@ enum ScanCoordinator {
             PlannedCollector(step: 2, collector: BrewCollector()),
             PlannedCollector(step: 2, collector: DiskCollector(disk: snapshot.disk)),
             PlannedCollector(step: 3, collector: CacheCollector()),
+            PlannedCollector(step: 3, collector: SimulatorCollector()),
             PlannedCollector(step: 3, collector: OrphanCollector())
         ]
 
@@ -76,7 +77,8 @@ enum ScanCoordinator {
                         disk: snapshot.disk,
                         includeProtectedFolders: includeProtectedFolders
                     )
-                )
+                ),
+                PlannedCollector(step: 4, collector: LargeAppDataCollector())
             ]
 
             items.append(contentsOf: await collect(slowPlan) { completed, total, finishedSteps in

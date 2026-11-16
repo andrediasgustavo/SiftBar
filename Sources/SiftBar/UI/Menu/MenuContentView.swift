@@ -29,6 +29,16 @@ struct MenuContentView: View {
         .keyboardShortcut("r")
         .disabled(appState.isScanning || appState.isApplying)
 
+        Button("Export Report…") {
+            DashboardWindowController.shared.show(state: appState)
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                NotificationCenter.default.post(name: .siftBarExportReport, object: nil)
+            }
+        }
+        .keyboardShortcut("e")
+        .disabled(appState.report == nil)
+
         Button("History…") {
             DashboardWindowController.shared.show(state: appState)
 

@@ -100,6 +100,81 @@ final class ActionExecutorTests: XCTestCase {
         XCTAssertEqual(item.reclaimDomain, .disk)
     }
 
+    func testSimulatorDeletionPreviewAndTitle() {
+        let action = ItemAction.deleteSimulator(
+            udid: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+            name: "iPhone 16 Pro",
+            path: "/tmp/simulator",
+            bytes: 2_000_000_000
+        )
+
+        XCTAssertTrue(ActionExecutor.preview(for: action).contains("xcrun simctl delete AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"))
+        XCTAssertEqual(ActionExecutor.verb(for: action), "Delete")
+        XCTAssertEqual(ActionExecutor.title(for: [item(action: action)]), "Delete Simulator…")
+        XCTAssertEqual(
+            ActionExecutor.title(for: [
+                item(action: action),
+                item(action: action)
+            ]),
+            "Delete 2 Simulators…"
+        )
+    }
+
+    func testUnavailableSimulatorsPreviewAndTitle() {
+        let action = ItemAction.deleteUnavailableSimulators(count: 3)
+
+        XCTAssertTrue(ActionExecutor.preview(for: action).contains("xcrun simctl delete unavailable"))
+        XCTAssertEqual(ActionExecutor.verb(for: action), "Delete")
+        XCTAssertEqual(
+            ActionExecutor.title(for: [item(action: action)]),
+            "Delete Unavailable Simulators…"
+        )
+    }
+
+    func testInvalidSimulatorIdentifierIsRefusedWithoutRunning() async {
+        let item = ScanItem(
+            category: .caches,
+            title: "Simulator",
+            detail: "",
+            impactLabel: "1 GB",
+            impactBytes: 1_000_000_000,
+            risk: .caution,
+            action: .deleteSimulator(
+                udid: "not-a-uuid",
+                name: "Simulator",
+                path: "/tmp/simulator",
+                bytes: 1_000_000_000
+            ),
+            evidence: "/tmp/simulator"
+        )
+
+        let report = await ActionExecutor.perform(item)
+
+        XCTAssertFalse(report.success)
+        XCTAssertTrue(report.message.contains("not a simulator identifier"))
+        XCTAssertTrue(report.freesImmediately)
+    }
+
+    func testLowConfidenceLeftoverIsRefused() async {
+        let item = ScanItem(
+            category: .leftovers,
+            title: "JetBrains",
+            detail: "",
+            impactLabel: "1 GB",
+            impactBytes: 1_000_000_000,
+            risk: .caution,
+            action: .trashLeftover(path: "/tmp/JetBrains", bytes: 1_000_000_000),
+            evidence: "/tmp/JetBrains",
+            leftoverConfidence: .low
+        )
+
+        XCTAssertFalse(item.canBeChanged)
+
+        let report = await ActionExecutor.perform(item)
+        XCTAssertFalse(report.success)
+        XCTAssertTrue(report.message.contains("Low-confidence"))
+    }
+
     func testVerbsMatchTheAction() {
         XCTAssertEqual(ActionExecutor.verb(for: .killProcess(pid: 1, name: "Foo")), "Quit")
         XCTAssertEqual(ActionExecutor.verb(for: .disableLaunchItem(label: "x")), "Disable")

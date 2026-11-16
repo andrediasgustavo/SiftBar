@@ -38,7 +38,11 @@ struct CacheCollector: Collector {
         // A single `du -d 1` measures every child of Caches. Static targets
         // that live inside it (Homebrew) reuse those numbers instead of
         // walking the same tree a second time.
-        let children = await PathSizer.childDirectorySizes(of: cachesPath, timeout: 20)
+        let children = await PathSizer.childDirectorySizes(
+            of: cachesPath,
+            ignoringNames: SensitivePaths.duIgnoreNames,
+            timeout: 20
+        )
         let childBytes = Dictionary(uniqueKeysWithValues: children.map { ($0.path, $0.bytes) })
 
         var measured: [Measured] = []
@@ -83,7 +87,11 @@ struct CacheCollector: Collector {
     /// single `du -d 1` instead of one process per folder.
     static func dynamicMeasured(home: String, excluding: Set<String> = []) async -> [Measured] {
         let cachesPath = "\(home)/Library/Caches"
-        let children = await PathSizer.childDirectorySizes(of: cachesPath, timeout: 20)
+        let children = await PathSizer.childDirectorySizes(
+            of: cachesPath,
+            ignoringNames: SensitivePaths.duIgnoreNames,
+            timeout: 20
+        )
         return dynamicMeasured(children: children, cachesPath: cachesPath, excluding: excluding)
     }
 
@@ -156,6 +164,12 @@ struct CacheCollector: Collector {
             Target(
                 name: "Xcode DerivedData",
                 path: "\(home)/Library/Developer/Xcode/DerivedData",
+                risk: .safe,
+                relatedApps: ["xcode"]
+            ),
+            Target(
+                name: "iPhone device support",
+                path: "\(home)/Library/Developer/Xcode/iOS DeviceSupport",
                 risk: .safe,
                 relatedApps: ["xcode"]
             ),

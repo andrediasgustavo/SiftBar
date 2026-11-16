@@ -105,6 +105,76 @@ final class OrphanCollectorTests: XCTestCase {
         XCTAssertTrue(OrphanCollector.items(from: []).isEmpty)
     }
 
+    func testCandidatesUseInventoryConfidence() {
+        let complete = AppInventory(
+            apps: [],
+            receipts: ["com.jetbrains.CLion"],
+            caskTokens: [],
+            isIncomplete: false
+        )
+
+        let candidates = OrphanCollector.candidates(
+            entries: ["JetBrains", "OrphanApp"],
+            inventory: complete,
+            supportPath: "/tmp/Application Support"
+        )
+
+        XCTAssertEqual(candidates.map(\.name), ["JetBrains", "OrphanApp"])
+        XCTAssertEqual(candidates[0].confidence, .low)
+        XCTAssertNotNil(candidates[0].confidenceReason)
+        XCTAssertEqual(candidates[1].confidence, .high)
+    }
+
+    func testIncompleteInventoryDowngradesToMedium() {
+        let incomplete = AppInventory(
+            apps: [],
+            receipts: [],
+            caskTokens: [],
+            isIncomplete: true
+        )
+
+        let candidates = OrphanCollector.candidates(
+            entries: ["OrphanApp"],
+            inventory: incomplete,
+            supportPath: "/tmp/Application Support"
+        )
+
+        XCTAssertEqual(candidates.first?.confidence, .medium)
+    }
+
+    func testLowConfidenceItemsAreInformationalAndNotChangeable() {
+        let item = OrphanCollector.items(from: [
+            OrphanCollector.Measured(
+                candidate: .init(
+                    name: "JetBrains",
+                    path: "/tmp/JetBrains",
+                    confidence: .low,
+                    confidenceReason: "A receipt uses the vendor identifier “jetbrains”."
+                ),
+                bytes: 500_000_000
+            )
+        ]).first
+
+        XCTAssertNotNil(item)
+        XCTAssertEqual(item?.leftoverConfidence, .low)
+        XCTAssertTrue(item?.isInformational == true)
+        XCTAssertFalse(item?.canBeChanged == true)
+        XCTAssertTrue(item?.detail.contains("jetbrains") == true)
+    }
+
+    func testHighConfidenceItemsKeepTheirAction() {
+        let item = OrphanCollector.items(from: [
+            OrphanCollector.Measured(
+                candidate: .init(name: "OrphanApp", path: "/tmp/OrphanApp", confidence: .high),
+                bytes: 500_000_000
+            )
+        ]).first
+
+        XCTAssertEqual(item?.leftoverConfidence, .high)
+        XCTAssertTrue(item?.canBeChanged == true)
+        XCTAssertFalse(item?.isInformational == true)
+    }
+
     func testInstalledAppNamesReadsOnlyAppBundles() throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SiftBarTests-\(UUID().uuidString)", isDirectory: true)

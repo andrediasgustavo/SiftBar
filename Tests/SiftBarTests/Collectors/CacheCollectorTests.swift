@@ -5,7 +5,7 @@ final class CacheCollectorTests: XCTestCase {
     func testTargetsCoverKnownCaches() {
         let targets = CacheCollector.targets(home: "/Users/tester")
 
-        XCTAssertEqual(targets.count, 8)
+        XCTAssertEqual(targets.count, 9)
         XCTAssertEqual(targets.first?.name, "npm")
         XCTAssertEqual(targets.first?.path, "/Users/tester/.npm/_cacache")
         XCTAssertEqual(targets.first?.risk, .safe)

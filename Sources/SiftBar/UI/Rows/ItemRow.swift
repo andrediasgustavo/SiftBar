@@ -33,7 +33,7 @@ struct ItemRow: View {
                 evidenceLine
             }
         }
-        .padding(.vertical, 9)
+        .padding(.vertical, 11)
         .padding(.horizontal, 10)
         .padding(.leading, isChild ? 26 : 0)
         .background(rowBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -81,7 +81,7 @@ struct ItemRow: View {
             }
 
             Text(item.title)
-                .font(isChild ? .callout.weight(.medium) : .body.weight(.medium))
+                .font(.system(size: isChild ? 13 : 14, weight: .medium))
                 .lineLimit(1)
 
             Spacer(minLength: 8)
@@ -106,7 +106,7 @@ struct ItemRow: View {
     private var detailLine: some View {
         if showsDetail {
             Text(item.detail)
-                .font(.subheadline)
+                .font(.system(size: 13))
                 .foregroundStyle(.secondary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -128,7 +128,7 @@ struct ItemRow: View {
     private var warningLine: some View {
         if let warning = item.warning {
             Label(warning, systemImage: "exclamationmark.triangle.fill")
-                .font(.caption)
+                .font(.system(size: 12))
                 .foregroundStyle(.orange)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -141,7 +141,7 @@ struct ItemRow: View {
                 .foregroundStyle(.secondary)
 
             Text(item.displayEvidence)
-                .font(.system(size: 11, design: .monospaced))
+                .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -168,12 +168,21 @@ struct ItemRow: View {
                 .accessibilityLabel("Show in Finder")
             }
 
+            if let confidence = item.leftoverConfidence {
+                Text(confidence.shortLabel)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(confidenceTint(confidence))
+                    .lineLimit(1)
+                    .help(confidenceHelp(confidence))
+                    .accessibilityIdentifier("row.confidence.\(item.title)")
+            }
+
             Spacer(minLength: 8)
 
             // Keep the risk word visible: the rail is a scanning aid, not the
             // only carrier of risk. Screen readers get it in the checkbox label.
             Text(item.isProtected ? "Protected" : (item.isInformational ? "Info" : item.risk.label))
-                .font(.caption2.weight(.medium))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(item.risk == .dangerous ? Color(nsColor: .systemRed) : Color.secondary)
                 .lineLimit(1)
                 .accessibilityIdentifier("row.risk.\(item.title)")
@@ -209,6 +218,25 @@ struct ItemRow: View {
                 .frame(width: 18, height: 18)
                 .help(helpText)
                 .accessibilityLabel(accessibilityText)
+        }
+    }
+
+    private func confidenceTint(_ confidence: LeftoverConfidence) -> Color {
+        switch confidence {
+        case .high: return Color(nsColor: .systemGreen)
+        case .medium: return Color(nsColor: .systemOrange)
+        case .low: return Color.secondary
+        }
+    }
+
+    private func confidenceHelp(_ confidence: LeftoverConfidence) -> String {
+        switch confidence {
+        case .high:
+            return "No installed app, cask, or receipt matches this folder."
+        case .medium:
+            return "SiftBar could not read every app location. Confirm the app is gone before removing this folder."
+        case .low:
+            return "A receipt or vendor identifier relates this folder to an installed app. It is review-only."
         }
     }
 

@@ -167,6 +167,38 @@ final class PathSizerTests: XCTestCase {
         XCTAssertFalse(filtered.contains { $0.path == photos.standardizedFileURL.path })
     }
 
+    func testChildDirectorySizesIgnoresNamesInsideDU() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SiftBarTests-\(UUID().uuidString)", isDirectory: true)
+        let kept = directory.appendingPathComponent("Kept", isDirectory: true)
+        let music = directory.appendingPathComponent("Music", isDirectory: true)
+        try FileManager.default.createDirectory(at: kept, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: music, withIntermediateDirectories: true)
+        try Data(repeating: 0xAB, count: 1_000_000)
+            .write(to: kept.appendingPathComponent("payload.bin"))
+        try Data(repeating: 0xCD, count: 2_000_000)
+            .write(to: music.appendingPathComponent("payload.bin"))
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let filtered = await PathSizer.childDirectorySizes(
+            of: directory.path,
+            ignoringNames: ["Music"]
+        )
+
+        XCTAssertTrue(filtered.contains { $0.path == kept.standardizedFileURL.path })
+        XCTAssertFalse(filtered.contains { $0.path == music.standardizedFileURL.path })
+    }
+
+    func testSensitivePathsListsBothCasingsForDU() {
+        XCTAssertTrue(SensitivePaths.duIgnoreNames.contains("Music"))
+        XCTAssertTrue(SensitivePaths.duIgnoreNames.contains("music"))
+        XCTAssertTrue(SensitivePaths.duIgnoreNames.contains("com.apple.MediaLibraryService"))
+        XCTAssertTrue(SensitivePaths.mediaNames.contains("music"))
+        XCTAssertTrue(SensitivePaths.mediaNames.contains("com.apple.medialibraryservice"))
+    }
+
     func testSizeInBytesCanIgnoreAnExpensiveChild() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("SiftBarTests-\(UUID().uuidString)", isDirectory: true)

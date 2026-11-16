@@ -12,15 +12,6 @@ struct DiskUsageCollector: Collector {
     static let minimumBytes: Int64 = 100 * 1024 * 1024
     static let limit = 12
 
-    /// Folder names that belong to the Photos library. Walking them triggers
-    /// the system photo-library permission prompt, which the disk map does not
-    /// need, so they are measured only when the user grants access elsewhere.
-    static let sensitiveLibraryNames: Set<String> = [
-        "photos",
-        "com.apple.photos",
-        "com.apple.mobileslideshow"
-    ]
-
     init(disk: DiskStats, includeProtectedFolders: Bool = true) {
         self.disk = disk
         self.includeProtectedFolders = includeProtectedFolders
@@ -31,8 +22,24 @@ struct DiskUsageCollector: Collector {
         var library: [String: Int64]
         var applications: Int64
         var systemLibrary: Int64
+        /// Categories measured inside the "System & other" remainder. They are
+        /// shown as a read-only drill-down, never as cleanup actions.
+        var remainderDetails: [RemainderDetail] = []
+        /// Number of APFS local snapshots, when `tmutil` reports them. The
+        /// bytes are managed by macOS and are not sized by SiftBar.
+        var snapshotCount: Int = 0
 
         static let empty = Sizes(home: [:], library: [:], applications: 0, systemLibrary: 0)
+    }
+
+    /// One named part of "System & other". Every entry is measured with `du`
+    /// on a path that is not already counted by another category.
+    struct RemainderDetail: Sendable, Equatable {
+        let name: String
+        let bytes: Int64
+        let detail: String
+        let evidence: String
+        let revealPath: String?
     }
 
     func collect() async -> [ScanItem] {
@@ -63,24 +70,27 @@ struct DiskUsageCollector: Collector {
             }
         }
 
-        var measurements: [Measurement] = [
+        let measurements: [Measurement] = [
             Measurement(
                 key: "appSupport",
                 path: "\(home)/Library/Application Support",
                 timeout: 25,
-                include: true
+                include: true,
+                ignoring: SensitivePaths.duIgnoreNames
             ),
             Measurement(
                 key: "groupContainers",
                 path: "\(home)/Library/Group Containers",
                 timeout: 25,
-                include: true
+                include: true,
+                ignoring: SensitivePaths.duIgnoreNames
             ),
             Measurement(
                 key: "caches",
                 path: "\(home)/Library/Caches",
                 timeout: 25,
-                include: true
+                include: true,
+                ignoring: SensitivePaths.duIgnoreNames
             ),
             Measurement(
                 key: "developerLibrary",
@@ -123,6 +133,34 @@ struct DiskUsageCollector: Collector {
             Measurement(key: "android", path: "\(home)/.android", timeout: 15, include: true),
             Measurement(key: "gradle", path: "\(home)/.gradle", timeout: 15, include: true),
             Measurement(key: "npm", path: "\(home)/.npm", timeout: 15, include: true),
+            // Named parts of the remainder. None of these paths is inside a
+            // category measured above, so they do not double count.
+            Measurement(key: "trash", path: "\(home)/.Trash", timeout: 10, include: true),
+            Measurement(
+                key: "vmSwap",
+                path: "/private/var/vm",
+                timeout: 10,
+                include: true
+            ),
+            Measurement(
+                key: "homebrew",
+                path: "/opt/homebrew",
+                timeout: 20,
+                include: true,
+                ignoring: ["Caskroom"]
+            ),
+            Measurement(
+                key: "homebrewIntel",
+                path: "/usr/local/Cellar",
+                timeout: 20,
+                include: true
+            ),
+            Measurement(
+                key: "cloudStorage",
+                path: "\(home)/Library/CloudStorage",
+                timeout: 20,
+                include: true
+            ),
             // TCC-protected folders are opt-in. When disabled they are skipped
             // without spawning a process (the child task returns zero).
             Measurement(
@@ -149,7 +187,8 @@ struct DiskUsageCollector: Collector {
         // process per container, which could be hundreds.
         async let containerSizesTask = PathSizer.childDirectorySizes(
             of: "\(home)/Library/Containers",
-            excludingNames: Self.sensitiveLibraryNames,
+            excludingNames: SensitivePaths.mediaNames,
+            ignoringNames: SensitivePaths.duIgnoreNames,
             timeout: 20
         )
 
@@ -176,6 +215,7 @@ struct DiskUsageCollector: Collector {
 
         let containerSizes = await containerSizesTask
         let containersBytes = containerSizes.reduce(Int64(0)) { $0 + $1.bytes }
+        let snapshotCount = await Self.localSnapshotCount()
 
         let homeSizes: [String: Int64] = [
             "Documents": values["documents"] ?? 0,
@@ -200,7 +240,9 @@ struct DiskUsageCollector: Collector {
             home: homeSizes,
             library: librarySizes,
             applications: (values["applications"] ?? 0) + (values["userApplications"] ?? 0),
-            systemLibrary: values["systemLibrary"] ?? 0
+            systemLibrary: values["systemLibrary"] ?? 0,
+            remainderDetails: Self.remainderDetails(from: values, snapshotCount: snapshotCount),
+            snapshotCount: snapshotCount
         )
 
         guard sizes != .empty else { return [] }
@@ -235,6 +277,82 @@ struct DiskUsageCollector: Collector {
         return await PathSizer.sizeInBytes(of: path, timeout: timeout)
     }
 
+    static func localSnapshotCount() async -> Int {
+        guard let result = try? await CommandRunner.run(
+            "/usr/bin/tmutil",
+            arguments: ["listlocalsnapshots", "/"],
+            timeout: 5
+        ), result.exitCode == 0 else {
+            return 0
+        }
+
+        return result.stdout
+            .split(separator: "\n")
+            .filter { $0.contains("com.apple.TimeMachine") || $0.hasSuffix(".local") }
+            .count
+    }
+
+    /// Builds the named parts of the remainder. Paths are chosen so they are
+    /// not already inside a measured category (otherwise the drill-down would
+    /// double count). Sizes are still estimates: APFS can share blocks between
+    /// folders, so the UI treats them as approximate.
+    static func remainderDetails(
+        from values: [String: Int64],
+        snapshotCount: Int
+    ) -> [RemainderDetail] {
+        let details: [RemainderDetail] = [
+            RemainderDetail(
+                name: "Trash",
+                bytes: values["trash"] ?? 0,
+                detail: "Files you deleted that still take space until the Trash is emptied. SiftBar does not empty it.",
+                evidence: "du -sk ~/.Trash",
+                revealPath: "~/.Trash"
+            ),
+            RemainderDetail(
+                name: "Swap files",
+                bytes: values["vmSwap"] ?? 0,
+                detail: "RAM that macOS paged to disk. The system grows and shrinks these files by itself.",
+                evidence: "du -sk /private/var/vm",
+                revealPath: nil
+            ),
+            RemainderDetail(
+                name: "Homebrew",
+                bytes: values["homebrew"] ?? 0,
+                detail: "Homebrew packages and Cellar on Apple Silicon. Installed app bundles are counted under Applications; Caskroom is excluded here.",
+                evidence: "du -sk -I Caskroom /opt/homebrew",
+                revealPath: "/opt/homebrew"
+            ),
+            RemainderDetail(
+                name: "Homebrew (Intel)",
+                bytes: values["homebrewIntel"] ?? 0,
+                detail: "Homebrew Cellar under /usr/local.",
+                evidence: "du -sk /usr/local/Cellar",
+                revealPath: "/usr/local/Cellar"
+            ),
+            RemainderDetail(
+                name: "Cloud storage",
+                bytes: values["cloudStorage"] ?? 0,
+                detail: "Dropbox, OneDrive, Google Drive and other File Provider folders. This is your data, not cache.",
+                evidence: "du -sk ~/Library/CloudStorage",
+                revealPath: "~/Library/CloudStorage"
+            )
+        ]
+
+        var measured = details.filter { $0.bytes > 0 }
+
+        if snapshotCount > 0 {
+            measured.append(RemainderDetail(
+                name: "Local snapshots",
+                bytes: 0,
+                detail: "\(snapshotCount) APFS local \(snapshotCount == 1 ? "snapshot" : "snapshots"). macOS creates and removes them automatically; SiftBar cannot size or delete them.",
+                evidence: "tmutil listlocalsnapshots /",
+                revealPath: nil
+            ))
+        }
+
+        return measured
+    }
+
     // MARK: - Grouping
 
     struct Category {
@@ -242,6 +360,8 @@ struct DiskUsageCollector: Collector {
         let bytes: Int64
         let detail: String
         let evidence: [String]
+        /// Read-only rows shown when the user expands "System & other".
+        var children: [ScanItem] = []
     }
 
     /// Pure builder so the grouping and remainder logic can be tested without
@@ -339,14 +459,68 @@ struct DiskUsageCollector: Collector {
             categories.append(Category(
                 name: "System & other",
                 bytes: remainder,
-                detail: "Not measured by SiftBar: Pictures/Photos, macOS itself, /System, /private, snapshots, purgeable space, Xcode simulator devices/runtimes (/Library/Developer) and other volumes. SiftBar will not delete any of it.",
-                evidence: ["total used - measured categories"]
+                detail: "Not measured by the main map: macOS itself, /System, /private, protected folders, purgeable space and other volumes. Expand it to see the parts SiftBar can name, including what still cannot be measured. SiftBar will not delete any of it.",
+                evidence: ["total used - measured categories"],
+                children: remainderChildren(
+                    details: sizes.remainderDetails,
+                    remainder: remainder
+                )
             ))
         }
 
         let filtered = categories.filter { $0.bytes >= minimumBytes }
         let sorted = filtered.sorted { $0.bytes > $1.bytes }
         return Array(sorted.prefix(limit))
+    }
+
+    /// Splits the remainder into named rows without ever claiming more bytes
+    /// than the remainder itself. A category that does not fit (APFS block
+    /// sharing can make folder sums exceed the volume total) is left in the
+    /// unaccounted row instead of inflating the total.
+    static func remainderChildren(details: [RemainderDetail], remainder: Int64) -> [ScanItem] {
+        var budget = max(0, remainder)
+        var children: [ScanItem] = []
+
+        for detail in details.sorted(by: { $0.bytes > $1.bytes }) {
+            if detail.bytes > 0 {
+                guard detail.bytes >= minimumBytes, detail.bytes <= budget else { continue }
+                budget -= detail.bytes
+            }
+
+            let isManaged = detail.bytes == 0
+            children.append(ScanItem(
+                category: .disk,
+                title: detail.name,
+                detail: detail.detail,
+                impactLabel: isManaged ? "macOS-managed" : format(detail.bytes),
+                impactBytes: isManaged ? nil : detail.bytes,
+                risk: .safe,
+                action: .none,
+                evidence: detail.evidence,
+                isInformational: true,
+                isBreakdown: true,
+                isSlowRefresh: true,
+                revealPath: detail.revealPath
+            ))
+        }
+
+        if budget > 0 {
+            children.append(ScanItem(
+                category: .disk,
+                title: "Other macOS and protected data",
+                detail: "macOS itself, /System, /private, protected folders, purgeable space and other volumes. SiftBar cannot measure or clean it.",
+                impactLabel: format(budget),
+                impactBytes: budget,
+                risk: .safe,
+                action: .none,
+                evidence: "used - measured - named categories",
+                isInformational: true,
+                isBreakdown: true,
+                isSlowRefresh: true
+            ))
+        }
+
+        return children
     }
 
     private static func sum(_ values: [Int64]) -> Int64 {
@@ -366,7 +540,8 @@ struct DiskUsageCollector: Collector {
                 evidence: category.evidence.joined(separator: " · "),
                 isInformational: true,
                 isBreakdown: true,
-                isSlowRefresh: true
+                isSlowRefresh: true,
+                children: category.children
             )
         }
     }

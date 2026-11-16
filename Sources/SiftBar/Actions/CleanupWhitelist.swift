@@ -11,6 +11,7 @@ enum CleanupWhitelist {
             "\(home)/.npm/_cacache",
             "\(home)/.expo",
             "\(home)/Library/Developer/Xcode/DerivedData",
+            "\(home)/Library/Developer/Xcode/iOS DeviceSupport",
             "\(home)/.gradle/caches",
             "\(home)/Library/Caches/Homebrew",
             "\(home)/Library/Developer/CoreSimulator/Caches",

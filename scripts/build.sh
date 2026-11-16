@@ -58,6 +58,11 @@ cp "$BUILD_DIR/$APP_NAME" "$APP_DIR/Contents/MacOS/$APP_NAME"
 cp "$ROOT/Resources/Info.plist" "$APP_DIR/Contents/Info.plist"
 cp "$ROOT/Resources/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
 
+# FinderInfo/fileprovider xattrs from the enclosing folder make
+# `codesign --verify --strict` fail even after signing. Clear them before the
+# signature so the local bundle matches what CI produces.
+xattr -cr "$APP_DIR" 2>/dev/null || true
+
 echo "==> Signing (ad-hoc)"
 codesign --force --sign - "$APP_DIR" >/dev/null
 

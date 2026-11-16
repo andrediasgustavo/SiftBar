@@ -100,6 +100,39 @@ final class ReviewMetricsTests: XCTestCase {
         XCTAssertEqual(metrics.memoryReleasableBytes, 0)
     }
 
+    func testLowConfidenceLeftoversAreNotFindingsOrReclaimable() {
+        let high = ScanItem(
+            category: .leftovers,
+            title: "High",
+            detail: "",
+            impactLabel: "1 GB",
+            impactBytes: 1_000_000_000,
+            risk: .caution,
+            action: .trashLeftover(path: "/tmp/High", bytes: 1_000_000_000),
+            evidence: "/tmp/High",
+            leftoverConfidence: .high
+        )
+        let low = ScanItem(
+            category: .leftovers,
+            title: "Low",
+            detail: "",
+            impactLabel: "2 GB",
+            impactBytes: 2_000_000_000,
+            risk: .caution,
+            action: .trashLeftover(path: "/tmp/Low", bytes: 2_000_000_000),
+            evidence: "/tmp/Low",
+            isInformational: true,
+            leftoverConfidence: .low
+        )
+
+        let metrics = ReviewMetrics.make(visible: [high, low], all: [high, low])
+
+        XCTAssertEqual(metrics.findings, 1)
+        XCTAssertEqual(metrics.needReview, 1)
+        XCTAssertEqual(metrics.informational, 1)
+        XCTAssertEqual(metrics.diskReclaimableBytes, 1_000_000_000)
+    }
+
     func testEmptyInputProducesEmptyMetrics() {
         XCTAssertEqual(ReviewMetrics.make(visible: [], all: []), .empty)
     }

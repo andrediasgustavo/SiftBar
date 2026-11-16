@@ -70,7 +70,12 @@ struct BasePage {
     }
 
     func assertValueContains(_ element: XCUIElement, _ needle: String, file: StaticString = #filePath, line: UInt = #line) {
-        let value = element.value as? String ?? ""
+        // SwiftUI sometimes exposes a Text's content as `value` and sometimes
+        // as `label`; accept either so the assertion tests the content, not the
+        // element type of this SDK.
+        let value = [element.value as? String, element.label]
+            .compactMap { $0 }
+            .joined(separator: " ")
         XCTAssertTrue(value.contains(needle), "expected value to contain '\(needle)', got '\(value)'", file: file, line: line)
     }
 }

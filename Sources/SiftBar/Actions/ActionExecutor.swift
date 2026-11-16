@@ -9,6 +9,9 @@ struct ActionReport: Identifiable, Sendable {
     let reclaimedBytes: Int64
     let domain: ReclaimDomain?
     let movedToTrash: Bool
+    /// Disk bytes that are freed immediately, without an empty-Trash step
+    /// (simulators deleted through `simctl`).
+    let freesImmediately: Bool
 
     init(item: ScanItem, success: Bool, message: String) {
         self.id = item.id
@@ -20,6 +23,12 @@ struct ActionReport: Identifiable, Sendable {
         self.movedToTrash = {
             switch item.action {
             case .deletePath, .trashLeftover: return true
+            default: return false
+            }
+        }()
+        self.freesImmediately = {
+            switch item.action {
+            case .deleteSimulator, .deleteUnavailableSimulators: return true
             default: return false
             }
         }()
@@ -54,6 +63,12 @@ enum ActionExecutor {
 
         case .trashLeftover(let path, _):
             return "Move leftover app data to Trash: \(path)"
+
+        case .deleteSimulator(let udid, let name, _, _):
+            return "xcrun simctl delete \(udid)    # \(name)"
+
+        case .deleteUnavailableSimulators(let count):
+            return "xcrun simctl delete unavailable    # \(count) unavailable"
         }
     }
 
@@ -88,6 +103,7 @@ enum ActionExecutor {
         case .stopService: return "Stop"
         case .deletePath: return "Move to Trash"
         case .trashLeftover: return "Move to Trash"
+        case .deleteSimulator, .deleteUnavailableSimulators: return "Delete"
         }
     }
 
@@ -103,6 +119,8 @@ enum ActionExecutor {
             case .stopService: return "Stop Service…"
             case .deletePath: return "Move to Trash…"
             case .trashLeftover: return "Move Leftover to Trash…"
+            case .deleteSimulator: return "Delete Simulator…"
+            case .deleteUnavailableSimulators: return "Delete Unavailable Simulators…"
             }
         }
 
@@ -128,6 +146,12 @@ enum ActionExecutor {
         if actions.allSatisfy({ if case .trashLeftover = $0 { return true }; return false }) {
             return "Move \(count) Leftovers to Trash\(suffix)"
         }
+        if actions.allSatisfy({ if case .deleteSimulator = $0 { return true }; return false }) {
+            return "Delete \(count) Simulators\(suffix)"
+        }
+        if actions.allSatisfy({ if case .deleteUnavailableSimulators = $0 { return true }; return false }) {
+            return "Delete Unavailable Simulators\(suffix)"
+        }
         if actions.allSatisfy({ if case .disableLaunchItem = $0 { return true }; return false }) {
             return "Disable \(count) Launch Items\(suffix)"
         }
@@ -146,6 +170,17 @@ enum ActionExecutor {
     }
 
     static func perform(_ item: ScanItem) async -> ActionReport {
+        // Low-confidence leftovers are deliberately read-only: SiftBar could
+        // not prove the app that owns the data is gone, so the user must
+        // inspect the folder in Finder first.
+        if item.leftoverConfidence == .low {
+            return ActionReport(
+                item: item,
+                success: false,
+                message: "Low-confidence leftover. SiftBar will not change it; review the folder in Finder first."
+            )
+        }
+
         switch item.action {
         case .none:
             return ActionReport(item: item, success: false, message: "This item has no action.")
@@ -315,6 +350,34 @@ enum ActionExecutor {
             } catch {
                 return ActionReport(item: item, success: false, message: error.localizedDescription)
             }
+
+        case .deleteSimulator(let udid, let name, _, _):
+            // Only a real UUID reaches the command; the argument is never
+            // built from a display name or a path.
+            guard UUID(uuidString: udid) != nil else {
+                return ActionReport(
+                    item: item,
+                    success: false,
+                    message: "Refused: \(udid) is not a simulator identifier."
+                )
+            }
+
+            return await run(
+                item,
+                executable: "/usr/bin/xcrun",
+                arguments: ["simctl", "delete", udid],
+                timeout: 30,
+                successMessage: "Deleted \(name). Xcode can create a new simulator."
+            )
+
+        case .deleteUnavailableSimulators(let count):
+            return await run(
+                item,
+                executable: "/usr/bin/xcrun",
+                arguments: ["simctl", "delete", "unavailable"],
+                timeout: 60,
+                successMessage: "Deleted \(count) unavailable simulators."
+            )
         }
     }
 
@@ -389,7 +452,7 @@ extension ScanItem {
     }
 
     var canBeChanged: Bool {
-        isActionable && !requiresAdmin
+        isActionable && !requiresAdmin && leftoverConfidence != .low
     }
 
     /// A real filesystem location for the row, when there is one. Cache and
@@ -397,11 +460,19 @@ extension ScanItem {
     var revealURL: URL? {
         let fileManager = FileManager.default
 
+        if let revealPath {
+            let expanded = (revealPath as NSString).expandingTildeInPath
+            return URL(fileURLWithPath: expanded)
+        }
+
         switch action {
         case .deletePath(let path, _):
             return URL(fileURLWithPath: path)
 
         case .trashLeftover(let path, _):
+            return URL(fileURLWithPath: path)
+
+        case .deleteSimulator(_, _, let path, _):
             return URL(fileURLWithPath: path)
 
         case .disableLaunchItem(let label), .enableLaunchItem(let label):

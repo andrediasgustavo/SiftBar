@@ -4,15 +4,19 @@ import Foundation
 struct ReviewFilter: Equatable {
     var category: ItemCategory?
     var risk: Risk?
+    /// Restricts the leftovers list to one confidence level. `nil` keeps every
+    /// confidence visible.
+    var confidence: LeftoverConfidence?
     var searchText: String = ""
 
     var isActive: Bool {
-        category != nil || risk != nil || !normalizedSearchText.isEmpty
+        category != nil || risk != nil || confidence != nil || !normalizedSearchText.isEmpty
     }
 
     mutating func reset() {
         category = nil
         risk = nil
+        confidence = nil
         searchText = ""
     }
 
@@ -22,6 +26,8 @@ struct ReviewFilter: Equatable {
         return items.filter { item in
             if let category, item.category != category { return false }
             if let risk, item.risk != risk { return false }
+            if let confidence, item.category == .leftovers,
+               item.leftoverConfidence != confidence { return false }
             guard !terms.isEmpty else { return true }
 
             let haystack = Self.searchableText(for: item)

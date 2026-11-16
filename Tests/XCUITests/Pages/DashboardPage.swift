@@ -7,12 +7,35 @@ struct DashboardPage {
 
     var headerAnalyze: XCUIElement { app.buttons["header.analyze"] }
     var headerHistory: XCUIElement { app.buttons["header.history"] }
+    var headerExport: XCUIElement { app.buttons["header.export"] }
     var searchField: XCUIElement { app.searchFields["filter.search"] }
     var riskPicker: XCUIElement {
         base.control([app.popUpButtons], identifier: "filter.risk", label: "Risk")
     }
     var selectMenu: XCUIElement {
         base.control([app.menuButtons, app.popUpButtons], identifier: "filter.select", label: "Select")
+    }
+    var confidencePicker: XCUIElement {
+        base.control(
+            [app.popUpButtons, app.menuButtons],
+            identifier: "filter.confidence",
+            label: "Confidence"
+        )
+    }
+
+    /// SwiftUI exposes a DisclosureGroup as a button on some SDKs and as a
+    /// clickable static text on others.
+    var diskDetailsToggle: XCUIElement {
+        let triangle = app.disclosureTriangles["disk.details"]
+        if triangle.exists { return triangle }
+
+        let button = app.buttons["disk.details"]
+        if button.exists { return button }
+
+        let labelled = app.buttons["Show details"]
+        if labelled.exists { return labelled }
+
+        return app.staticTexts["Show details"]
     }
     var resetFilter: XCUIElement { base.linkOrButton("filter.reset") }
     var applyButton: XCUIElement { app.buttons["action-bar.apply"] }
@@ -24,6 +47,7 @@ struct DashboardPage {
         base.require(headerAnalyze, timeout: 10)
         base.assertLabel(headerAnalyze, "Analyze")
         base.assertLabel(headerHistory, "History")
+        base.require(headerExport, timeout: 5)
         XCTAssertFalse(app.buttons["first-run.analyze"].exists)
     }
 
@@ -53,6 +77,14 @@ struct DashboardPage {
 
     func riskLabel(of title: String) -> XCUIElement {
         app.staticTexts["row.risk.\(title)"]
+    }
+
+    func confidenceLabel(of title: String) -> XCUIElement {
+        app.staticTexts["row.confidence.\(title)"]
+    }
+
+    func selectCheckbox(for title: String) -> XCUIElement {
+        app.buttons["row.select.\(title)"]
     }
 
     /// Selects every changeable row through the bulk menu.

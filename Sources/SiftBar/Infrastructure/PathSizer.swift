@@ -131,12 +131,23 @@ enum PathSizer {
     static func childDirectorySizes(
         of path: String,
         excludingNames: Set<String> = [],
+        ignoringNames: [String] = [],
         timeout: TimeInterval = 15
     ) async -> [ChildSize] {
         guard FileManager.default.fileExists(atPath: path) else { return [] }
+
+        // `-I` must happen inside `du`: filtering the output afterwards still
+        // walks the protected folder and triggers the macOS privacy prompt.
+        var arguments = ["-d", "1", "-k"]
+        for name in ignoringNames {
+            arguments.append("-I")
+            arguments.append(name)
+        }
+        arguments.append(path)
+
         guard let result = try? await CommandRunner.run(
             "/usr/bin/du",
-            arguments: ["-d", "1", "-k", path],
+            arguments: arguments,
             timeout: timeout
         ) else { return [] }
 

@@ -6,6 +6,7 @@ import SwiftUI
 final class ReviewFilterModel: ObservableObject {
     @Published var category: ItemCategory?
     @Published var risk: Risk?
+    @Published var confidence: LeftoverConfidence?
     @Published var searchText: String = ""
 
     var isActive: Bool {
@@ -16,6 +17,7 @@ final class ReviewFilterModel: ObservableObject {
         var filter = ReviewFilter()
         filter.category = category
         filter.risk = risk
+        filter.confidence = confidence
         filter.searchText = searchText
         return filter
     }
@@ -27,6 +29,7 @@ final class ReviewFilterModel: ObservableObject {
     func reset() {
         category = nil
         risk = nil
+        confidence = nil
         searchText = ""
     }
 }

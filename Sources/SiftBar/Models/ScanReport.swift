@@ -185,7 +185,9 @@ struct ScanReport: Sendable {
                 isProtected: item.isProtected,
                 isBreakdown: item.isBreakdown,
                 isSlowRefresh: item.isSlowRefresh,
-                children: kept
+                children: kept,
+                leftoverConfidence: item.leftoverConfidence,
+                revealPath: item.revealPath
             )
         }
 

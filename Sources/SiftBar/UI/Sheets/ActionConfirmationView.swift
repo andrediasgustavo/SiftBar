@@ -26,6 +26,12 @@ struct ActionConfirmationView: View {
                                     .foregroundStyle(.secondary)
                             }
 
+                            if let confidence = item.leftoverConfidence {
+                                Text(confidence.label)
+                                    .font(.caption2.weight(.medium))
+                                    .foregroundStyle(confidence == .high ? Color.secondary : Color.orange)
+                            }
+
                             Text(ActionExecutor.preview(for: item))
                                 .font(.system(size: 11, design: .monospaced))
                                 .foregroundStyle(.secondary)
@@ -127,6 +133,14 @@ struct ActionConfirmationView: View {
 
         if items.contains(where: { if case .trashLeftover = $0.action { return true }; return false }) {
             return "Leftover app data is moved to the Trash. Empty the Trash to free the space."
+        }
+
+        if items.contains(where: {
+            if case .deleteSimulator = $0.action { return true }
+            if case .deleteUnavailableSimulators = $0.action { return true }
+            return false
+        }) {
+            return "Deleting a simulator removes its apps and data. This cannot be undone; Xcode can create a new simulator."
         }
 
         return "Review caution items before applying."

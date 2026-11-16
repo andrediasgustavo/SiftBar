@@ -164,6 +164,53 @@ final class ReviewFilterTests: XCTestCase {
         XCTAssertEqual(ReviewFilter.count(of: .safe, in: sample), 1)
     }
 
+    func testConfidenceFilterOnlyAppliesToLeftovers() {
+        let leftovers = [
+            ScanItem(
+                category: .leftovers,
+                title: "High",
+                detail: "",
+                impactLabel: "",
+                impactBytes: nil,
+                risk: .caution,
+                action: .trashLeftover(path: "/tmp/High", bytes: 1),
+                evidence: "/tmp/High",
+                leftoverConfidence: .high
+            ),
+            ScanItem(
+                category: .leftovers,
+                title: "Low",
+                detail: "",
+                impactLabel: "",
+                impactBytes: nil,
+                risk: .caution,
+                action: .trashLeftover(path: "/tmp/Low", bytes: 1),
+                evidence: "/tmp/Low",
+                leftoverConfidence: .low
+            )
+        ]
+
+        var filter = ReviewFilter()
+        filter.confidence = .high
+
+        XCTAssertEqual(filter.apply(to: leftovers).map(\.title), ["High"])
+        XCTAssertTrue(filter.isActive)
+
+        // A cache row has no confidence and must not disappear when the
+        // leftovers filter is still around.
+        XCTAssertEqual(filter.apply(to: sample).count, sample.count)
+    }
+
+    func testConfidenceResetClearsTheFilter() {
+        var filter = ReviewFilter()
+        filter.confidence = .medium
+
+        filter.reset()
+
+        XCTAssertNil(filter.confidence)
+        XCTAssertFalse(filter.isActive)
+    }
+
     func testFilterPreservesOriginalOrder() {
         var filter = ReviewFilter()
         filter.risk = .caution

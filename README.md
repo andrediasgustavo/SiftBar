@@ -20,10 +20,10 @@ exact command SiftBar will run. Nothing happens without your confirmation.
 - **Memory** — an Activity Monitor-style breakdown (app, wired, compressed,
   cached, free), swap and pressure, plus the apps using the most RAM with a
   one-click Quit. Memory numbers never get mixed with disk numbers.
-- **Disk** — container-level usage that matches System Settings, a measured
-  space map, APFS volume breakdown, and a **Clean up** list of caches and
-  reviewed leftovers. The map collapses with **Show details / Hide details**,
-  so the actionable list gets the space.
+- **Disk** — container-level usage that matches System Settings, a compact
+  space map with four plain groups, and a **What you can clean** list of caches
+  and reviewed leftovers. Technical details stay behind **Show details** and
+  **How SiftBar measured this**.
 - **Startup & login items** — see the launch agents and daemons that start with
   your Mac, and disable the ones you do not recognize.
 - **Heavy processes** — helpers are grouped under the app they belong to, so
@@ -31,10 +31,17 @@ exact command SiftBar will run. Nothing happens without your confirmation.
   macOS processes are labelled `Protected`, excluded from the review count, and
   offer Activity Monitor instead of a dead end.
 - **Caches** — one row per app cache, with a warning when the app is still
-  running. Moving a cache to the Trash is transparent and reversible.
+  running. Moving a cache to the Trash is transparent and reversible. iPhone
+  device support is a cache too; iOS Simulator storage is itemized, and
+  unavailable simulators can be deleted safely with Apple's `simctl`.
+- **Large app data** — Docker, OrbStack, UTM, Parallels, VMware, iPhone
+  backups, Xcode archives and Steam are listed with their real size and a
+  **Show in Finder** link. They are not caches, so SiftBar never deletes them.
 - **Leftovers** — Application Support data from apps that are no longer
-  installed. SiftBar shows the size, explains that it is user data, and only
-  moves it to the Trash after confirmation.
+  installed. SiftBar checks `/Applications`, Homebrew Caskroom, Setapp,
+  Spotlight, bundle IDs and installer receipts, then labels each row with a
+  **confidence** (`High`, `Medium`, `Low`). Low-confidence rows are review-only:
+  they may be shared vendor data, so SiftBar never offers to remove them.
 - **Biggest consumers** — see the largest files and folders in Downloads,
   Desktop, and Documents, and reveal them in Finder.
 - **Clear explanations** — every row shows its impact, its source, and a risk
@@ -53,7 +60,8 @@ exact command SiftBar will run. Nothing happens without your confirmation.
    refreshes the numbers.
 4. **See the result** — a result card separates disk bytes moved to the Trash
    from RAM released by quitting apps. Empty the Trash to actually free disk
-   space.
+   space. **Export** (`⌘E`) saves the whole report as Markdown, with evidence,
+   commands and confidence labels, and abbreviates your home path to `~`.
 
 ## See it in action
 
@@ -79,15 +87,17 @@ numbers.
 
 ![Disk clean-up list](docs/screenshots/disk.png)
 
-The Disk tab combines the space map with a **Clean up** list of caches and
-reviewed leftovers, with checkboxes and command previews. **Show details /
-Hide details** collapses the map so the actionable list gets more room.
+The Disk tab starts with three numbers — Used, Free, and Can be cleaned — and
+one bar split into four groups: **Apps and tools**, **Your files**, **App data
+and caches**, and **macOS and protected**. **Show details** breaks each group
+into plain sub-buckets; commands, APFS volumes and purgeable space live behind
+**How SiftBar measured this**. The list below uses the space.
 
-![Disk map and APFS volumes](docs/screenshots/disk-details.png)
+![Disk map and details](docs/screenshots/disk-details.png)
 
-Expanded, the map shows the measured folders, APFS volume breakdown, and the
-part of `Used` that SiftBar will not touch. "System & other" is macOS, protected
-data, snapshots and shared APFS blocks — not a cleanup target.
+Expanded, the map shows the sub-buckets without any command or path jargon.
+The technical sheet keeps the evidence available for people who want it, with
+a lock on everything SiftBar will never touch.
 
 ### Startup & Login
 
@@ -132,6 +142,9 @@ No repeated folder prompts.
   kill action.
 - **Only whitelisted cache paths can be moved to the Trash.** The executor
   checks again before acting, including path traversal and symlink escapes.
+- **Low-confidence leftovers are never actionable.** If a receipt, cask, bundle
+  ID or vendor identifier suggests the data is still owned, SiftBar shows the
+  row for review only.
 - **System-wide launch items stay locked** because they require administrator
   rights.
 - **No account, no telemetry, no network calls.** SiftBar works locally.
@@ -192,9 +205,9 @@ combine them; **Full Disk Access** is the single consent that covers all three.
 
 Without Full Disk Access, SiftBar skips those three folders. The first time
 you open the dashboard it shows a one-time, optional sheet explaining what is
-missing; the app keeps working normally if you choose **Not now**. A small
-**Partial disk map** note stays in the Disk tab so you can complete access
-later.
+missing; the app keeps working normally if you choose **Not now**. The Disk
+map then shows **Your files — Not measured** with an **Add access** link, so
+you can complete access later without a permanent banner.
 
 1. In the sheet, click **Open Full Disk Settings…**.
 2. In **System Settings → Privacy & Security → Full Disk Access**, click **+**,
@@ -223,11 +236,11 @@ SiftBar never asks for administrator rights or runs `sudo`.
 5. Grouped processes show a chevron; expand the row to quit a specific PID.
    Disabled launch items appear as **Disabled launch item** and can be enabled
    again.
-6. Open **Disk** to see the space map, APFS volumes, largest files and folders,
-   and the **Clean up** list of caches and reviewed leftovers — all actionable
-   from the same tab. Use **Show details / Hide details** to collapse the map
-   and give the cleanup list more room; SiftBar remembers your choice. Large
-   files are read-only; use the folder button to review them in Finder.
+6. Open **Disk** to see the space map, largest files and folders, and the
+   **What you can clean** list of caches and reviewed leftovers — all in the
+   same scroll. **Show details** is collapsed by default and resets when you
+   leave the page. Large files are read-only; use the folder button to review
+   them in Finder.
 7. Select changeable items with the checkboxes, then use the action bar at the
    bottom.
 8. Review the commands and confirm. SiftBar removes the items, refreshes the

@@ -179,21 +179,39 @@ enum DemoReport {
         ))
 
         // Leftovers
-        let leftovers: [(String, Int64)] = [
-            ("OldApp", 320_000_000),
-            ("LegacyTool", 480_000_000)
+        let leftovers: [(name: String, bytes: Int64, confidence: LeftoverConfidence)] = [
+            ("OldApp", 320_000_000, .high),
+            ("LegacyTool", 480_000_000, .medium),
+            ("JetBrains", 1_900_000_000, .low)
         ]
-        for (name, bytes) in leftovers {
+        for leftover in leftovers {
+            let detail: String
+            switch leftover.confidence {
+            case .high:
+                detail = "No app named \(leftover.name) is installed in /Applications, ~/Applications, /System/Applications, Homebrew Caskroom, or Spotlight. This folder can contain settings, history, saved games, or licenses, so it is not the same as a cache. Open it in Finder before deleting."
+            case .medium:
+                detail = "SiftBar could not finish reading every app location, so \(leftover.name) may still belong to an installed app. This folder can contain settings, history, saved games, or licenses, so it is not the same as a cache. Open it in Finder before deleting."
+            case .low:
+                detail = "A receipt or installed app uses the vendor identifier “jetbrains”, so this may be shared vendor data rather than an orphan. SiftBar shows it for review only and will not move it to the Trash."
+            }
+
             items.append(ScanItem(
                 category: .leftovers,
-                title: "Possible leftover: \(name)",
-                detail: "No app named \(name) is installed in /Applications, ~/Applications or /System/Applications. This folder can contain settings, history, saved games, or licenses, so it is not the same as a cache. Open it in Finder before deleting.",
-                impactLabel: format(bytes),
-                impactBytes: bytes,
+                title: "Possible leftover: \(leftover.name)",
+                detail: detail,
+                impactLabel: format(leftover.bytes),
+                impactBytes: leftover.bytes,
                 risk: .caution,
-                action: .trashLeftover(path: "/Users/example/Library/Application Support/\(name)", bytes: bytes),
-                evidence: "/Users/example/Library/Application Support/\(name)",
-                warning: "Review the contents first. This is app data, not recreatable cache."
+                action: .trashLeftover(
+                    path: "/Users/example/Library/Application Support/\(leftover.name)",
+                    bytes: leftover.bytes
+                ),
+                evidence: "/Users/example/Library/Application Support/\(leftover.name)",
+                warning: leftover.confidence == .low
+                    ? "Low confidence: an installed app or receipt is related to this folder. SiftBar will not remove it."
+                    : "Review the contents first. This is app data, not recreatable cache.",
+                isInformational: leftover.confidence == .low,
+                leftoverConfidence: leftover.confidence
             ))
         }
 
@@ -223,8 +241,17 @@ enum DemoReport {
             isInformational: true
         ))
 
+        let systemOtherChildren: [ScanItem] = [
+            demoRemainder("Homebrew", bytes: 12_400_000_000, detail: "Homebrew packages and Cellar on Apple Silicon. Installed app bundles are counted under Applications; Caskroom is excluded here.", evidence: "du -sk -I Caskroom /opt/homebrew", revealPath: "/opt/homebrew"),
+            demoRemainder("Cloud storage", bytes: 9_100_000_000, detail: "Dropbox, OneDrive, Google Drive and other File Provider folders. This is your data, not cache.", evidence: "du -sk ~/Library/CloudStorage", revealPath: "/Users/example/Library/CloudStorage"),
+            demoRemainder("Trash", bytes: 6_800_000_000, detail: "Files you deleted that still take space until the Trash is emptied. SiftBar does not empty it.", evidence: "du -sk ~/.Trash", revealPath: "/Users/example/.Trash"),
+            demoRemainder("Swap files", bytes: 3_200_000_000, detail: "RAM that macOS paged to disk. The system grows and shrinks these files by itself.", evidence: "du -sk /private/var/vm", revealPath: nil),
+            demoRemainder("Local snapshots", bytes: 0, detail: "3 APFS local snapshots. macOS creates and removes them automatically; SiftBar cannot size or delete them.", evidence: "tmutil listlocalsnapshots /", revealPath: nil),
+            demoRemainder("Other macOS and protected data", bytes: 13_570_000_000, detail: "macOS itself, /System, /private, protected folders, purgeable space and other volumes. SiftBar cannot measure or clean it.", evidence: "used - measured - named categories", revealPath: nil)
+        ]
+
         let breakdown: [(String, Int64, String)] = [
-            ("System & other", 45_070_000_000, "Not measured by SiftBar: Pictures/Photos, macOS itself, /System, /private, snapshots, purgeable space and other volumes. SiftBar will not delete any of it."),
+            ("System & other", 74_562_000_000, "Not measured by the main map: macOS itself, /System, /private, protected folders, purgeable space and other volumes. Expand it to see the parts SiftBar can name, including what still cannot be measured. SiftBar will not delete any of it."),
             ("App data", 27_200_000_000, "Application Support, Containers and Group Containers. This is app data, not cache."),
             ("Developer", 18_500_000_000, "Xcode, Android SDK/emulator, Gradle and npm data."),
             ("Applications", 9_500_000_000, "App bundles in /Applications and ~/Applications."),
@@ -244,7 +271,8 @@ enum DemoReport {
                 action: .none,
                 evidence: "du -sk /Users/example",
                 isInformational: true,
-                isBreakdown: true
+                isBreakdown: true,
+                children: name == "System & other" ? systemOtherChildren : []
             ))
         }
 
@@ -264,6 +292,29 @@ enum DemoReport {
             items: ScanCoordinator.sort(items),
             memory: memory,
             disk: disk
+        )
+    }
+
+    private static func demoRemainder(
+        _ name: String,
+        bytes: Int64,
+        detail: String,
+        evidence: String,
+        revealPath: String?
+    ) -> ScanItem {
+        ScanItem(
+            category: .disk,
+            title: name,
+            detail: detail,
+            impactLabel: bytes == 0 ? "macOS-managed" : format(bytes),
+            impactBytes: bytes == 0 ? nil : bytes,
+            risk: .safe,
+            action: .none,
+            evidence: evidence,
+            isInformational: true,
+            isBreakdown: true,
+            isSlowRefresh: true,
+            revealPath: revealPath
         )
     }
 

@@ -130,6 +130,12 @@ final class ReviewActionModel: ObservableObject {
         reports.filter { $0.success && $0.movedToTrash }.reduce(0) { $0 + $1.reclaimedBytes }
     }
 
+    /// Disk bytes already freed (simulators deleted with `simctl`), as opposed
+    /// to bytes waiting in the Trash.
+    var diskFreedBytes: Int64 {
+        reports.filter { $0.success && $0.freesImmediately }.reduce(0) { $0 + $1.reclaimedBytes }
+    }
+
     var memoryReleasedBytes: Int64 {
         reports.filter { $0.success && $0.domain == .memory }.reduce(0) { $0 + $1.reclaimedBytes }
     }

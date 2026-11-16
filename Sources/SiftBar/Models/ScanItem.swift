@@ -60,6 +60,44 @@ enum ItemCategory: String, Codable, CaseIterable, Hashable, Sendable {
     }
 }
 
+/// How sure SiftBar is that an Application Support folder is really orphaned.
+///
+/// `high` means every app location was read and nothing matched. `medium`
+/// means the inventory was incomplete, so the folder may still belong to an
+/// installed app. `low` means a receipt, cask, or vendor identifier suggests
+/// the data is shared or still owned — those rows stay visible but are never
+/// offered as an action.
+enum LeftoverConfidence: String, Sendable, Equatable, CaseIterable {
+    case high
+    case medium
+    case low
+
+    var label: String {
+        switch self {
+        case .high: return "High confidence"
+        case .medium: return "Medium confidence"
+        case .low: return "Low confidence"
+        }
+    }
+
+    var shortLabel: String {
+        switch self {
+        case .high: return "High"
+        case .medium: return "Medium"
+        case .low: return "Low"
+        }
+    }
+
+    /// Most confident first, so low-confidence rows sort after real findings.
+    var sortRank: Int {
+        switch self {
+        case .high: return 0
+        case .medium: return 1
+        case .low: return 2
+        }
+    }
+}
+
 enum ItemAction: Sendable, Equatable {
     case none
     case killProcess(pid: Int32, name: String)
@@ -71,6 +109,12 @@ enum ItemAction: Sendable, Equatable {
     /// installed. This is user data, not a cache, so it has its own action and
     /// a stricter confirmation path.
     case trashLeftover(path: String, bytes: Int64)
+    /// One iOS/iPadOS simulator device. Deletion goes through Apple's `simctl`
+    /// so CoreSimulator stays consistent; it is not a manual Trash move.
+    case deleteSimulator(udid: String, name: String, path: String, bytes: Int64)
+    /// Devices whose runtime is no longer installed. `simctl` can remove them
+    /// safely and only them.
+    case deleteUnavailableSimulators(count: Int)
 
     /// Filesystem location a successful action removes. Used to prune every
     /// category view showing the same path even when a rescan mints new IDs.
@@ -78,8 +122,10 @@ enum ItemAction: Sendable, Equatable {
         switch self {
         case .deletePath(let path, _), .trashLeftover(let path, _):
             return path
+        case .deleteSimulator(_, _, let path, _):
+            return path
         case .none, .killProcess, .disableLaunchItem,
-            .enableLaunchItem, .stopService:
+            .enableLaunchItem, .stopService, .deleteUnavailableSimulators:
             return nil
         }
     }
@@ -111,8 +157,14 @@ struct ScanItem: Identifiable, Equatable, Sendable {
     /// Row produced by a slow `du` walk (space map, large consumers). Quick
     /// refreshes skip these collectors and reuse the previous report's rows.
     let isSlowRefresh: Bool
-    /// Per-process rows for grouped processes. Empty for every other item.
+    /// Per-process rows for grouped processes, or the read-only categories
+    /// behind "System & other" for the disk map. Empty for every other item.
     let children: [ScanItem]
+    /// Present only on leftovers. `nil` for every other category.
+    let leftoverConfidence: LeftoverConfidence?
+    /// Optional folder a read-only row can reveal in Finder (for example the
+    /// Trash or CloudStorage rows inside "System & other").
+    let revealPath: String?
 
     init(
         id: UUID = UUID(),
@@ -129,7 +181,9 @@ struct ScanItem: Identifiable, Equatable, Sendable {
         isProtected: Bool = false,
         isBreakdown: Bool = false,
         isSlowRefresh: Bool = false,
-        children: [ScanItem] = []
+        children: [ScanItem] = [],
+        leftoverConfidence: LeftoverConfidence? = nil,
+        revealPath: String? = nil
     ) {
         self.id = id
         self.category = category
@@ -146,6 +200,8 @@ struct ScanItem: Identifiable, Equatable, Sendable {
         self.isBreakdown = isBreakdown
         self.isSlowRefresh = isSlowRefresh
         self.children = children
+        self.leftoverConfidence = leftoverConfidence
+        self.revealPath = revealPath
     }
 
     /// Dangerous items are informational only; even if a collector attaches an
@@ -158,7 +214,7 @@ struct ScanItem: Identifiable, Equatable, Sendable {
     /// never be added together in a single "reclaimable" number.
     var reclaimDomain: ReclaimDomain? {
         switch action {
-        case .deletePath, .trashLeftover:
+        case .deletePath, .trashLeftover, .deleteSimulator, .deleteUnavailableSimulators:
             return .disk
         case .killProcess:
             return .memory

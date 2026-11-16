@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct DashboardView: View {
     @EnvironmentObject private var appState: AppState
@@ -10,20 +11,25 @@ struct DashboardView: View {
     @StateObject private var expanded = ExpansionModel()
     @StateObject private var history = HistoryPanelModel()
     @StateObject private var searchFocus = SearchFocusModel()
-    @AppStorage("SiftBar.diskMapExpanded") private var diskMapExpanded = false
+    /// Advanced disk information starts collapsed every time the page opens.
+    /// It is intentionally not persisted: a previous deep dive should not make
+    /// the next visit dense.
+    @State private var showDiskDetails = false
+    @State private var showTechnicalDetails = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 0) {
             sidebar
-                .frame(width: 210)
+                .frame(width: 220)
 
             Divider()
 
             detail
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(minWidth: 900, minHeight: 600)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background {
             VStack {
                 Button("") { Task { await appState.analyze() } }
@@ -34,6 +40,10 @@ struct DashboardView: View {
 
                 Button("") { searchFocus.focus() }
                     .keyboardShortcut("f", modifiers: .command)
+
+                Button("") { exportReport() }
+                    .keyboardShortcut("e", modifiers: .command)
+                    .disabled(appState.report == nil)
             }
             .opacity(0)
             .frame(width: 0, height: 0)
@@ -87,20 +97,32 @@ struct DashboardView: View {
                let category = Self.demoCategory(named: arguments[index + 1]) {
                 page.selection = .category(category)
             }
-            if arguments.contains("--demo-details") {
-                diskMapExpanded = true
+            if arguments.contains("--demo-details") || arguments.contains("--demo-system-other") {
+                // The demo page change resets the disclosure in onChange; let
+                // that settle before opening it for the screenshot.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    showDiskDetails = true
+                }
             }
             #endif
         }
         .onChange(of: page.category) { _ in
             actions.clear()
             expanded.clear()
+            showDiskDetails = false
+            showTechnicalDetails = false
+            // The confidence picker only exists on Leftovers. Do not carry its
+            // value into another page where it would hide rows.
+            filter.confidence = nil
         }
         .onReceive(NotificationCenter.default.publisher(for: .siftBarShowHistory)) { _ in
             history.show()
         }
         .onReceive(NotificationCenter.default.publisher(for: .siftBarFocusSearch)) { _ in
             searchFocus.focus()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .siftBarExportReport)) { _ in
+            exportReport()
         }
     }
 
@@ -110,6 +132,7 @@ struct DashboardView: View {
         VStack(spacing: 0) {
             List(selection: $page.selection) {
                 Label("Overview", systemImage: "square.grid.2x2")
+                    .font(.system(size: 14))
                     .badge(badge(allMetrics.findings))
                     .tag(ReviewPage.overview)
                     .contentShape(Rectangle())
@@ -117,10 +140,13 @@ struct DashboardView: View {
                     .onTapGesture { page.selection = .overview }
 
                 ForEach(Self.sidebarSections) { section in
-                    Section(section.title) {
+                    Section {
                         ForEach(section.categories, id: \.rawValue) { category in
                             categoryRow(category)
                         }
+                    } header: {
+                        Text(section.title)
+                            .font(.system(size: 12.5, weight: .semibold))
                     }
                 }
             }
@@ -134,11 +160,11 @@ struct DashboardView: View {
 
                 Text("Read-only by default")
             }
-            .font(.caption2)
+            .font(.system(size: 12))
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.vertical, 9)
         }
     }
 
@@ -175,6 +201,7 @@ struct DashboardView: View {
 
     private func categoryRow(_ category: ItemCategory) -> some View {
         Label(category.title, systemImage: category.symbol)
+            .font(.system(size: 14))
             .badge(badge(count(of: category)))
             .tag(ReviewPage.category(category))
             .contentShape(Rectangle())
@@ -220,32 +247,42 @@ struct DashboardView: View {
                     .padding(.top, 12)
                 }
 
-                if let report = appState.report, page.category == .memory {
-                    memoryCard(report)
-                        .padding(.horizontal, 24)
-                        .padding(.top, 12)
-                }
-
-                if let report = appState.report, page.category == .disk {
-                    diskCard(report)
-                        .padding(.horizontal, 24)
-                        .padding(.top, 12)
-                }
-
-                if !actions.reports.isEmpty {
-                    resultCard
-                        .padding(.horizontal, 24)
-                        .padding(.top, 12)
-                }
-
                 if appState.report != nil {
-                    filterRow
-                        .padding(.horizontal, 24)
+                    // One page scroll keeps the header fixed and lets the map
+                    // grow when "Show details" is opened, instead of pushing
+                    // the title and toolbar out of the window.
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 0) {
+                            if let report = appState.report, page.category == .memory {
+                                memoryCard(report)
+                                    .padding(.horizontal, 24)
+                                    .padding(.top, 12)
+                            }
 
-                    content
-                        .padding(.horizontal, 24)
-                        .opacity(appState.scanPresentation == .banner ? 0.45 : 1)
-                        .allowsHitTesting(appState.scanPresentation != .banner)
+                            if let report = appState.report, page.category == .disk {
+                                diskCard(report)
+                                    .padding(.horizontal, 24)
+                                    .padding(.top, 12)
+                            }
+
+                            if !actions.reports.isEmpty {
+                                resultCard
+                                    .padding(.horizontal, 24)
+                                    .padding(.top, 12)
+                            }
+
+                            filterRow
+                                .padding(.horizontal, 24)
+
+                            content
+                                .padding(.horizontal, 24)
+                                .opacity(appState.scanPresentation == .banner ? 0.45 : 1)
+                                .allowsHitTesting(appState.scanPresentation != .banner)
+                        }
+                        .padding(.bottom, 8)
+                    }
+                    .frame(maxHeight: .infinity)
+                    .accessibilityIdentifier("page.scroll")
 
                     actionBar
                 } else {
@@ -266,9 +303,20 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .center, spacing: 12) {
                 Text(pageTitle)
-                    .font(.title2.weight(.semibold))
+                    .font(.system(size: 24, weight: .semibold))
 
                 Spacer(minLength: 12)
+
+                if appState.report != nil {
+                    Button {
+                        exportReport()
+                    } label: {
+                        Label("Export", systemImage: "square.and.arrow.up")
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Export the current report as Markdown (⌘E)")
+                    .accessibilityIdentifier("header.export")
+                }
 
                 Button {
                     history.show()
@@ -294,7 +342,7 @@ struct DashboardView: View {
             }
 
             Text(pageDescription)
-                .font(.callout)
+                .font(.system(size: 14))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -336,6 +384,20 @@ struct DashboardView: View {
             .frame(width: 135)
             .accessibilityIdentifier("filter.risk")
 
+            if page.category == .leftovers {
+                Picker("Confidence", selection: $filter.confidence) {
+                    Text("All confidence").tag(LeftoverConfidence?.none)
+
+                    ForEach(LeftoverConfidence.allCases, id: \.rawValue) { confidence in
+                        Text("\(confidence.shortLabel) (\(confidenceCount(confidence)))")
+                            .tag(LeftoverConfidence?.some(confidence))
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 145)
+                .accessibilityIdentifier("filter.confidence")
+            }
+
             Menu("Select") {
                 Button("None") { actions.clear() }
                 Button("All Changeable") { actions.selectAll(flattened(filteredItems)) }
@@ -367,16 +429,17 @@ struct DashboardView: View {
             } else if page.category == .disk, items.contains(where: { $0.canBeChanged }) {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(alignment: .firstTextBaseline) {
-                        Text("Clean up")
-                            .font(.headline)
+                        Text("What you can clean")
+                            .font(.system(size: 15, weight: .semibold))
 
                         Spacer(minLength: 8)
 
-                        Text("Select changeable items; large files can be reviewed in Finder.")
-                            .font(.caption)
+                        Text("Select items; large files can be reviewed in Finder.")
+                            .font(.system(size: 12.5))
                             .foregroundStyle(.secondary)
                     }
-                    .padding(.bottom, 6)
+                    .padding(.top, 4)
+                    .padding(.bottom, 8)
 
                     itemList(items)
                 }
@@ -389,14 +452,11 @@ struct DashboardView: View {
     }
 
     private func itemList(_ items: [ScanItem]) -> some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                rows(sortedForReview(items))
-            }
-            .padding(.bottom, 4)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        LazyVStack(alignment: .leading, spacing: 0) {
+            rows(sortedForReview(items))
         }
-        .frame(maxHeight: .infinity)
+        .padding(.bottom, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
@@ -464,6 +524,8 @@ struct DashboardView: View {
             return "Quit"
         case .trashLeftover:
             return "Review"
+        case .deleteSimulator, .deleteUnavailableSimulators:
+            return "Delete"
         default:
             return nil
         }
@@ -486,12 +548,28 @@ struct DashboardView: View {
 
     private func sortedForReview(_ items: [ScanItem]) -> [ScanItem] {
         items.sorted { lhs, rhs in
+            // Informational rows are context, even when they carry a caution
+            // risk internally (large app data, simulator summaries). They
+            // belong after every actionable Safe row, not mixed into the
+            // caution/safe queue.
+            if lhs.isInformational != rhs.isInformational {
+                return !lhs.isInformational
+            }
+
             if lhs.isProtected != rhs.isProtected {
                 return !lhs.isProtected
             }
 
             if lhs.risk.sortRank != rhs.risk.sortRank {
                 return lhs.risk.sortRank < rhs.risk.sortRank
+            }
+
+            // Low-confidence leftovers stay at the bottom of their risk group:
+            // they are context, not a finding to act on.
+            let leftConfidence = lhs.leftoverConfidence?.sortRank ?? 0
+            let rightConfidence = rhs.leftoverConfidence?.sortRank ?? 0
+            if leftConfidence != rightConfidence {
+                return leftConfidence < rightConfidence
             }
 
             let left = lhs.impactBytes ?? -1
@@ -657,182 +735,185 @@ struct DashboardView: View {
     }
 
     private func diskCard(_ report: ScanReport) -> some View {
-        let disk = report.disk
-        let free = max(0, disk.totalBytes - disk.usedBytes)
-        let usedColor: Color
-        if disk.usedRatio >= 0.90 {
-            usedColor = .red
-        } else if disk.usedRatio >= 0.80 {
-            usedColor = .orange
-        } else {
-            usedColor = Self.breakdownColors[0]
+        let summary = DiskSpaceSummary.make(
+            items: report.items,
+            disk: report.disk,
+            includesProtectedFolders: appState.includesProtectedFolders
+        )
+        let segments = summary.groups.map { group in
+            BreakdownSegment(
+                name: group.title,
+                bytes: group.isMeasured ? group.bytes : 0,
+                color: Self.color(for: group.kind)
+            )
         }
-        let segments = [
-            BreakdownSegment(name: "Used", bytes: disk.usedBytes, color: usedColor),
-            BreakdownSegment(name: "Available", bytes: free, color: Color(nsColor: .systemGreen).opacity(0.65))
-        ]
-        let breakdown = report.items
-            .filter(\.isBreakdown)
-            .sorted { ($0.impactBytes ?? 0) > ($1.impactBytes ?? 0) }
-        let metrics = ReviewMetrics.make(visible: [], all: report.items)
 
-        return VStack(alignment: .leading, spacing: 10) {
-            if !appState.includesProtectedFolders {
-                HStack(spacing: 6) {
-                    Image(systemName: "info.circle")
-                        .foregroundStyle(.orange)
-
-                    Text("Partial disk map — Desktop, Documents and Downloads are not measured.")
-                        .foregroundStyle(.secondary)
-
-                    Spacer(minLength: 8)
-
-                    Button("Complete access") {
-                        appState.presentAccessSheet()
-                    }
-                    .buttonStyle(.link)
-                }
-                .font(.caption)
-                .padding(8)
-                .background(.orange.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
-            }
-
+        return VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text("Where space goes")
-                    .font(.headline)
+                Text("Where your space goes")
+                    .font(.system(size: 16, weight: .semibold))
 
                 Spacer(minLength: 8)
 
-                Text("\(format(disk.usedBytes)) used of \(format(disk.totalBytes))")
-                    .font(.caption)
+                Text("\(format(summary.usedBytes)) of \(format(summary.totalBytes)) used")
+                    .font(.system(size: 12.5))
                     .foregroundStyle(.secondary)
-
-                if disk.purgeableBytes > 0 {
-                    Text("· \(format(disk.purgeableBytes)) purgeable")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Button {
-                    diskMapExpanded.toggle()
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(diskMapExpanded ? "Hide details" : "Show details")
-                        Image(systemName: diskMapExpanded ? "chevron.up" : "chevron.down")
-                    }
-                    .font(.caption)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .help(diskMapExpanded
-                      ? "Hide the space map and APFS volumes"
-                      : "Show the space map and APFS volumes")
+                    .monospacedDigit()
             }
 
-            BreakdownBar(segments: segments, total: disk.totalBytes)
+            if summary.usedBytes > 0 {
+                BreakdownBar(segments: segments, total: summary.usedBytes)
+            }
 
-            HStack(spacing: 14) {
-                BreakdownLegend(segment: segments[0])
-                BreakdownLegend(segment: segments[1])
-                Spacer(minLength: 0)
-                if metrics.diskReclaimableBytes > 0 {
-                    Text("SiftBar can move \(format(metrics.diskReclaimableBytes)) to the Trash")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 9) {
+                ForEach(summary.groups) { group in
+                    diskGroupRow(group)
                 }
             }
 
-            if diskMapExpanded {
-                if !breakdown.isEmpty {
-                    LazyVGrid(
-                        columns: [GridItem(.flexible(), spacing: 18), GridItem(.flexible(), spacing: 18)],
-                        alignment: .leading,
-                        spacing: 5
-                    ) {
-                        ForEach(Array(breakdown.prefix(8).enumerated()), id: \.element.id) { index, item in
-                            HStack(spacing: 6) {
-                                Circle()
-                                    .fill(Self.breakdownColors[index % Self.breakdownColors.count])
-                                    .frame(width: 6, height: 6)
+            Button {
+                showDiskDetails.toggle()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: showDiskDetails ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
 
-                                Text(item.title)
-                                    .font(.caption)
-                                    .lineLimit(1)
-
-                                Spacer(minLength: 4)
-
-                                Text(item.impactLabel)
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                            }
-                            .help(item.detail)
-                        }
-                    }
-
-                    Text("Measured with du. System & other is the remainder that SiftBar does not scan. Protected folders may stay there until Full Disk Access is granted.")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
+                    Text("Show details")
+                        .font(.system(size: 13, weight: .medium))
                 }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("disk.details")
+            .accessibilityValue(showDiskDetails ? "Expanded" : "Collapsed")
 
-                if !disk.volumes.isEmpty {
-                    Divider()
-                        .padding(.vertical, 1)
-
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("APFS volumes")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.secondary)
-
-                        Spacer(minLength: 8)
-
-                        Text("System overhead is part of Used and cannot be cleaned by SiftBar.")
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                    }
-
-                    LazyVGrid(
-                        columns: [
-                            GridItem(.flexible(), spacing: 18),
-                            GridItem(.flexible(), spacing: 18),
-                            GridItem(.flexible(), spacing: 18)
-                        ],
-                        alignment: .leading,
-                        spacing: 5
-                    ) {
-                        ForEach(Array(disk.volumes.enumerated()), id: \.element.id) { index, volume in
-                            HStack(spacing: 6) {
-                                Circle()
-                                    .fill(Self.breakdownColors[index % Self.breakdownColors.count])
-                                    .frame(width: 6, height: 6)
-
-                                Text(volume.name)
-                                    .font(.caption)
-                                    .lineLimit(1)
-
-                                Spacer(minLength: 4)
-
-                                Text(format(volume.bytes))
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                            }
-                            .help("APFS volume \(volume.id) · roles: \(volume.roles.joined(separator: ", "))")
-                        }
-                    }
-
-                    Text("Volume totals can differ slightly from Used because APFS shares blocks and counts purgeable space separately.")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-
+            if showDiskDetails {
+                diskDetails(summary, report: report)
             }
         }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: diskMapExpanded)
-        .padding(14)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: showDiskDetails)
+        .padding(16)
         .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
         .overlay(
             RoundedRectangle(cornerRadius: 10)
                 .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1)
         )
+    }
+
+    /// Friendly sub-buckets plus the single, explicitly technical entry point.
+    @ViewBuilder
+    private func diskDetails(_ summary: DiskSpaceSummary, report: ScanReport) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            // Keep the technical entry point at the top of the expanded area:
+            // it is discoverable without scrolling past every sub-bucket.
+            Button {
+                showTechnicalDetails = true
+            } label: {
+                Label("How SiftBar measured this", systemImage: "info.circle")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.accentColor)
+            }
+            // A plain button with link styling stays a Button in the
+            // accessibility tree; `.buttonStyle(.link)` is exposed as a Link
+            // and its action is unreliable under XCUITest. A sheet also gives
+            // the long technical list room without anchoring a popover inside
+            // the page scroll view.
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("disk.technical")
+            .sheet(isPresented: $showTechnicalDetails) {
+                DiskTechnicalDetailsView(report: report)
+            }
+
+            ForEach(summary.groups.filter(\.isMeasured)) { group in
+                if !group.parts.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(group.title)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.secondary)
+
+                        ForEach(group.parts) { part in
+                            HStack(spacing: 8) {
+                                Text(part.title)
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(.secondary)
+
+                                Spacer(minLength: 8)
+
+                                Text(format(part.bytes))
+                                    .font(.system(size: 13).monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+
+        }
+        .padding(.top, 6)
+    }
+
+    /// One line of the space summary. The "Your files" row stays visible even
+    /// when personal folders are not measured, with a single link to add access.
+    @ViewBuilder
+    private func diskGroupRow(_ group: DiskSpaceSummary.Group) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Circle()
+                    .fill(Self.color(for: group.kind))
+                    .frame(width: 8, height: 8)
+                    .accessibilityHidden(true)
+
+                Text(group.title)
+                    .font(.system(size: 14, weight: .medium))
+
+                Spacer(minLength: 8)
+
+                if group.isMeasured {
+                    Text(format(group.bytes))
+                        .font(.system(size: 14, weight: .medium).monospacedDigit())
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Not measured")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+
+                    Button("Add access") {
+                        appState.presentAccessSheet()
+                    }
+                    .buttonStyle(.link)
+                    .font(.system(size: 13))
+                    .accessibilityIdentifier("disk.addAccess")
+                }
+            }
+
+            // The biggest bucket needs one plain sentence, otherwise it reads
+            // as a mystery number. Other groups explain themselves on expand.
+            if group.kind == .system || !group.isMeasured {
+                Text(group.detail)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .help(group.detail)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabel(for: group))
+    }
+
+    private func accessibilityLabel(for group: DiskSpaceSummary.Group) -> String {
+        if group.isMeasured {
+            return "\(group.title): \(format(group.bytes)). \(group.detail)"
+        }
+        return "\(group.title): not measured. \(group.detail)"
+    }
+
+    private static func color(for kind: DiskSpaceSummary.Kind) -> Color {
+        switch kind {
+        case .apps: return Color(nsColor: .systemBlue)
+        case .files: return Color(nsColor: .systemTeal)
+        case .appData: return Color(nsColor: .systemOrange)
+        case .system: return Color(nsColor: .systemGray)
+        }
     }
 
     // MARK: - Stats
@@ -899,25 +980,19 @@ struct DashboardView: View {
                 value: format(report.disk.usedBytes),
                 label: "Used",
                 tint: diskTint(report.disk),
-                help: "Container-level used space. The Data volume alone uses \(format(report.disk.dataVolumeUsedBytes))."
+                help: "Space used on this Mac, including macOS and protected files."
             ),
             Stat(
                 value: format(report.disk.importantFreeBytes),
-                label: "Available",
+                label: "Free",
                 tint: .primary,
-                help: "Includes \(format(report.disk.purgeableBytes)) of purgeable space, so it matches System Settings."
-            ),
-            Stat(
-                value: format(metrics.cacheReclaimableBytes),
-                label: "Caches",
-                tint: metrics.cacheReclaimableBytes > 0 ? .green : .secondary,
-                help: "Recreatable cache data SiftBar can move to the Trash. Empty the Trash to free it."
+                help: "Includes space macOS can free on demand, so it matches System Settings."
             ),
             Stat(
                 value: format(metrics.diskReclaimableBytes),
-                label: "Reclaimable",
+                label: "Can be cleaned",
                 tint: metrics.diskReclaimableBytes > 0 ? .green : .secondary,
-                help: "Caches plus reviewed leftovers. Leftovers are app data and need your confirmation."
+                help: "Caches and reviewed leftovers SiftBar can move to the Trash. Empty the Trash to free the space."
             )
         ]
     }
@@ -956,7 +1031,11 @@ struct DashboardView: View {
     }
 
     private func reclaimStats(_ metrics: ReviewMetrics, disk: DiskStats) -> [Stat] {
+        // Only actionable rows count: the simulator summary is informational
+        // and its devices may also appear individually, so summing every row
+        // would double count.
         let cacheBytes = categoryItems(.caches, in: allItems)
+            .filter(\.canBeChanged)
             .compactMap(\.impactBytes)
             .reduce(0, +)
 
@@ -969,9 +1048,9 @@ struct DashboardView: View {
             ),
             Stat(
                 value: format(cacheBytes),
-                label: "Caches",
+                label: "Can be cleaned",
                 tint: cacheBytes > 0 ? .green : .secondary,
-                help: "Recreatable cache data. Empty the Trash after moving it to actually free the space."
+                help: "Caches, iPhone device support and simulator data SiftBar can remove. Simulators are deleted immediately; caches go to the Trash."
             ),
             Stat(
                 value: "\(metrics.needReview)",
@@ -990,20 +1069,22 @@ struct DashboardView: View {
 
     private func leftoverStats(_ metrics: ReviewMetrics) -> [Stat] {
         let items = categoryItems(.leftovers, in: allItems)
-        let bytes = items.compactMap(\.impactBytes).reduce(0, +)
+        let findings = items.filter { !$0.isInformational }
+        // Low-confidence rows are context, not reclaimable data.
+        let bytes = items.filter(\.canBeChanged).compactMap(\.impactBytes).reduce(0, +)
 
         return [
             Stat(
-                value: "\(items.count)",
+                value: "\(findings.count)",
                 label: "Possible leftovers",
-                tint: items.isEmpty ? .secondary : .orange,
-                help: "Application Support folders with no matching installed app."
+                tint: findings.isEmpty ? .secondary : .orange,
+                help: "Application Support folders with no matching installed app. Low-confidence rows are not counted."
             ),
             Stat(
                 value: format(bytes),
-                label: "Total size",
+                label: "Reclaimable size",
                 tint: .primary,
-                help: "App data that could be moved to the Trash. Review the contents first."
+                help: "App data SiftBar can move to the Trash. Low-confidence rows and shared vendor folders are excluded."
             ),
             Stat(
                 value: "\(metrics.needReview)",
@@ -1083,19 +1164,27 @@ struct DashboardView: View {
             headline = actions.changedCount == 0
                 ? "\(actions.failedCount) \(actions.failedCount == 1 ? "item" : "items") failed"
                 : "\(actions.changedCount) of \(actions.reports.count) succeeded"
-        } else if actions.diskMovedBytes > 0 && actions.memoryReleasedBytes > 0 {
-            headline = "\(format(actions.diskMovedBytes)) moved to Trash · \(formatMemory(UInt64(actions.memoryReleasedBytes))) RAM released"
-        } else if actions.diskMovedBytes > 0 {
-            headline = "\(format(actions.diskMovedBytes)) moved to Trash"
-        } else if actions.memoryReleasedBytes > 0 {
-            headline = "\(formatMemory(UInt64(actions.memoryReleasedBytes))) RAM released"
         } else {
-            headline = "\(actions.changedCount) \(actions.changedCount == 1 ? "item" : "items") changed"
+            var outcomes: [String] = []
+            if actions.diskFreedBytes > 0 {
+                outcomes.append("\(format(actions.diskFreedBytes)) freed")
+            }
+            if actions.diskMovedBytes > 0 {
+                outcomes.append("\(format(actions.diskMovedBytes)) moved to Trash")
+            }
+            if actions.memoryReleasedBytes > 0 {
+                outcomes.append("\(formatMemory(UInt64(actions.memoryReleasedBytes))) RAM released")
+            }
+            headline = outcomes.isEmpty
+                ? "\(actions.changedCount) \(actions.changedCount == 1 ? "item" : "items") changed"
+                : outcomes.joined(separator: " · ")
         }
 
         let detail: String
         if actions.diskMovedBytes > 0 {
             detail = "\(actions.changedCount) succeeded · \(actions.failedCount) failed · Empty the Trash to free space"
+        } else if actions.diskFreedBytes > 0 {
+            detail = "\(actions.changedCount) succeeded · \(actions.failedCount) failed · Space freed immediately"
         } else {
             detail = "\(actions.changedCount) succeeded · \(actions.failedCount) failed"
         }
@@ -1235,7 +1324,7 @@ struct DashboardView: View {
         case .processes: return "Heavy processes running now, grouped by app. Quit what you do not need."
         case .startup: return "Apps and agents that start automatically. Disable what you do not recognize."
         case .services: return "Homebrew services that start or run in the background."
-        case .disk: return "Where space goes, what is safe to reclaim, and what SiftBar will not touch."
+        case .disk: return "See what's using space and clean only what you choose. SiftBar won't touch protected files."
         case .caches: return "Recreatable data. Moving it to the Trash slows the next run but keeps your files."
         case .leftovers: return "App data left behind by apps that are no longer installed. Review before deleting."
         }
@@ -1301,6 +1390,12 @@ struct DashboardView: View {
             .count
     }
 
+    private func confidenceCount(_ confidence: LeftoverConfidence) -> Int {
+        categoryItems(.leftovers, in: allItems)
+            .filter { $0.leftoverConfidence == confidence }
+            .count
+    }
+
     private func count(of risk: Risk) -> Int {
         // The risk picker must show counts for every risk, so ignore the
         // currently selected risk while computing them.
@@ -1319,6 +1414,38 @@ struct DashboardView: View {
 
     private func formatMemory(_ bytes: UInt64) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory)
+    }
+
+    /// Saves the current report as Markdown. The renderer is pure; this method
+    /// only owns the save panel. Nothing is written without the user choosing
+    /// a destination.
+    private func exportReport() {
+        guard let report = appState.report else { return }
+
+        let markdown = ReportExporter.markdown(
+            for: report,
+            includesProtectedFolders: appState.includesProtectedFolders
+        )
+
+        let panel = NSSavePanel()
+        panel.title = "Export SiftBar Report"
+        panel.prompt = "Export"
+        panel.nameFieldStringValue = ReportExporter.suggestedFilename()
+        // `UTType.markdown` is newer than the macOS 13 deployment target.
+        if let markdownType = UTType(filenameExtension: "md") {
+            panel.allowedContentTypes = [markdownType]
+        }
+        panel.canCreateDirectories = true
+
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+
+            do {
+                try markdown.write(to: url, atomically: true, encoding: .utf8)
+            } catch {
+                NSSound.beep()
+            }
+        }
     }
 
     private func openTrash() {

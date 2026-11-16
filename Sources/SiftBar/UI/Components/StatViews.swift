@@ -14,14 +14,14 @@ struct StatBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(stat.value)
-                .font(.title3.weight(.semibold))
+                .font(.system(size: 22, weight: .semibold))
                 .monospacedDigit()
                 .foregroundStyle(stat.tint)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
 
             Text(stat.label)
-                .font(.caption)
+                .font(.system(size: 12.5))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
