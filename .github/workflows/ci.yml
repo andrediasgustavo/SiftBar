@@ -1,5 +1,8 @@
 name: CI
 
+# Fast PR gate. Slow, destructive and compatibility checks live in
+# nightly.yml so a normal pull request does not wait for them.
+
 on:
   push:
     branches: [main]
