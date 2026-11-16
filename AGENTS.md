@@ -22,8 +22,9 @@ Estas regras valem para qualquer agente que trabalhe neste repositório.
 
 ## Qualidade
 
-- O gate local é `./scripts/check.sh` (unit + XCUITest). Todos os testes devem
-  passar antes de qualquer commit.
+- O hook de pre-commit roda só `./scripts/test.sh` (unit). XCUITest fica no
+  CI/nightly ou pode ser rodado manualmente com `./scripts/check.sh`.
+- O gate completo (unit + XCUITest) precisa estar verde antes de merge/release.
 - Testes de UI usam Page Objects (`Tests/XCUITests/Pages`) e accessibility IDs;
   não reintroduza testes baseados em OCR.
 - Atualize `HANDOFF.md`/`CONTEXT.md` (locais, ignorados pelo git) a cada

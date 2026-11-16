@@ -18,7 +18,10 @@ BUILD="$ROOT/.build/tests"
 MODULES="$BUILD/modules"
 LIBS="$BUILD/lib"
 SDK="$(xcrun --show-sdk-path)"
-TARGET="arm64-apple-macos13.0"
+# Run the host architecture. The previous hardcoded arm64 target made the
+# suite unrunnable on Intel runners.
+TARGET_ARCH="${SIFTBAR_TEST_ARCH:-$(uname -m)}"
+TARGET="$TARGET_ARCH-apple-macos13.0"
 
 rm -rf "$BUILD"
 mkdir -p "$MODULES" "$LIBS"
