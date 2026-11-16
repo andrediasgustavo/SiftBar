@@ -547,37 +547,7 @@ struct DashboardView: View {
     }
 
     private func sortedForReview(_ items: [ScanItem]) -> [ScanItem] {
-        items.sorted { lhs, rhs in
-            // Informational rows are context, even when they carry a caution
-            // risk internally (large app data, simulator summaries). They
-            // belong after every actionable Safe row, not mixed into the
-            // caution/safe queue.
-            if lhs.isInformational != rhs.isInformational {
-                return !lhs.isInformational
-            }
-
-            if lhs.isProtected != rhs.isProtected {
-                return !lhs.isProtected
-            }
-
-            if lhs.risk.sortRank != rhs.risk.sortRank {
-                return lhs.risk.sortRank < rhs.risk.sortRank
-            }
-
-            // Low-confidence leftovers stay at the bottom of their risk group:
-            // they are context, not a finding to act on.
-            let leftConfidence = lhs.leftoverConfidence?.sortRank ?? 0
-            let rightConfidence = rhs.leftoverConfidence?.sortRank ?? 0
-            if leftConfidence != rightConfidence {
-                return leftConfidence < rightConfidence
-            }
-
-            let left = lhs.impactBytes ?? -1
-            let right = rhs.impactBytes ?? -1
-            if left != right { return left > right }
-
-            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
-        }
+        ReviewOrdering.sorted(items)
     }
 
     @ViewBuilder
@@ -1159,35 +1129,16 @@ struct DashboardView: View {
         let tint: Color = actions.failedCount > 0 ? .orange : .green
         let symbol = actions.failedCount > 0 ? "exclamationmark.triangle.fill" : "checkmark.circle.fill"
 
-        let headline: String
-        if actions.failedCount > 0 {
-            headline = actions.changedCount == 0
-                ? "\(actions.failedCount) \(actions.failedCount == 1 ? "item" : "items") failed"
-                : "\(actions.changedCount) of \(actions.reports.count) succeeded"
-        } else {
-            var outcomes: [String] = []
-            if actions.diskFreedBytes > 0 {
-                outcomes.append("\(format(actions.diskFreedBytes)) freed")
-            }
-            if actions.diskMovedBytes > 0 {
-                outcomes.append("\(format(actions.diskMovedBytes)) moved to Trash")
-            }
-            if actions.memoryReleasedBytes > 0 {
-                outcomes.append("\(formatMemory(UInt64(actions.memoryReleasedBytes))) RAM released")
-            }
-            headline = outcomes.isEmpty
-                ? "\(actions.changedCount) \(actions.changedCount == 1 ? "item" : "items") changed"
-                : outcomes.joined(separator: " · ")
-        }
-
-        let detail: String
-        if actions.diskMovedBytes > 0 {
-            detail = "\(actions.changedCount) succeeded · \(actions.failedCount) failed · Empty the Trash to free space"
-        } else if actions.diskFreedBytes > 0 {
-            detail = "\(actions.changedCount) succeeded · \(actions.failedCount) failed · Space freed immediately"
-        } else {
-            detail = "\(actions.changedCount) succeeded · \(actions.failedCount) failed"
-        }
+        let summary = ActionResultSummary.make(
+            changedCount: actions.changedCount,
+            failedCount: actions.failedCount,
+            reportCount: actions.reports.count,
+            freedBytes: actions.diskFreedBytes,
+            movedBytes: actions.diskMovedBytes,
+            memoryBytes: actions.memoryReleasedBytes,
+            formatDisk: { format($0) },
+            formatMemory: { formatMemory(UInt64($0)) }
+        )
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 14) {
@@ -1197,12 +1148,12 @@ struct DashboardView: View {
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(headline)
+                    Text(summary.headline)
                         .font(.title3.weight(.semibold))
                         .monospacedDigit()
                         .accessibilityIdentifier("result.headline")
 
-                    Text(detail)
+                    Text(summary.detail)
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -1251,7 +1202,7 @@ struct DashboardView: View {
                 }
             }
 
-            if actions.diskMovedBytes > 0 {
+            if summary.showsTrashButton {
                 Button("Show Trash in Finder") {
                     openTrash()
                 }

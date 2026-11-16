@@ -3,7 +3,16 @@ name: CI
 on:
   push:
     branches: [main]
+    # Docs, screenshots and release notes do not change the app or scripts.
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - "LICENSE"
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - "LICENSE"
   workflow_dispatch:
 
 permissions:
@@ -31,9 +40,9 @@ jobs:
       - name: Validate package manifest
         run: swift package dump-package > /dev/null
 
-      - name: Build (debug)
-        run: swift build
-
+      # `swift test` already builds the debug products; a separate debug build
+      # only duplicated work. The release build stays because the validate job
+      # builds through scripts/build.sh, not SwiftPM.
       - name: Build (release)
         run: swift build -c release
 
@@ -100,13 +109,16 @@ jobs:
     name: UI tests (XCUITest)
     runs-on: macos-15
     timeout-minutes: 30
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
       - name: Install XcodeGen
-        run: brew install xcodegen
+        run: command -v xcodegen >/dev/null || brew install xcodegen
 
       - name: Generate Xcode project
         run: xcodegen generate
@@ -139,3 +151,12 @@ jobs:
           fi
 
           exit "$status"
+
+      - name: Upload UI test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SiftBar-UI-xcresult
+          path: build/UI.xcresult
+          if-no-files-found: ignore
+          retention-days: 7

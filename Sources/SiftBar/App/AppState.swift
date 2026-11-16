@@ -396,12 +396,27 @@ final class AppState: ObservableObject {
         demoMode = true
         report = DemoReport.make()
         lastDuration = 1.2
-        status = "Found 24 items in 1.2s. Nothing has been changed."
+        status = "Found \(report?.items.count ?? 0) items in 1.2s. Nothing has been changed."
         includesProtectedFolders = true
         accessStatus = .granted
         isAccessSheetPresented = false
         accessHint = nil
         errorMessage = nil
+    }
+
+    /// Adds simulator rows only for the UI tests and screenshots that need
+    /// them, so the default demo/README counts stay stable.
+    func addDemoSimulatorItems() {
+        guard let current = report else { return }
+
+        let items = ScanCoordinator.sort(current.items + DemoReport.simulatorItems())
+        report = ScanReport(
+            generatedAt: current.generatedAt,
+            items: items,
+            memory: current.memory,
+            disk: current.disk
+        )
+        status = "Found \(items.count) items in 1.2s. Nothing has been changed."
     }
     #endif
 

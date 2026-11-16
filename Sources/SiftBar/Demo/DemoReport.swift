@@ -295,6 +295,53 @@ enum DemoReport {
         )
     }
 
+    /// Rows used only by `--demo-simulators`. Kept out of the default report so
+    /// README counts and screenshots do not change for the simulator UI tests.
+    static func simulatorItems() -> [ScanItem] {
+        let udid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
+        let devicePath = "/Users/example/Library/Developer/CoreSimulator/Devices/\(udid)/data"
+
+        return [
+            ScanItem(
+                category: .caches,
+                title: "iOS Simulator devices",
+                detail: "3 simulators use 6.4 GB. 11 cannot boot with the current Xcode.",
+                impactLabel: "6.4 GB",
+                impactBytes: 6_400_000_000,
+                risk: .safe,
+                action: .none,
+                evidence: "xcrun simctl list devices",
+                isInformational: true
+            ),
+            ScanItem(
+                category: .caches,
+                title: "Unavailable simulators",
+                detail: "11 simulators cannot boot because their runtime is no longer installed. Deleting them is safe.",
+                impactLabel: "1.2 GB",
+                impactBytes: 1_200_000_000,
+                risk: .safe,
+                action: .deleteUnavailableSimulators(count: 11),
+                evidence: "xcrun simctl delete unavailable",
+                warning: "Deleting a simulator cannot be undone. Xcode can create a new one."
+            ),
+            ScanItem(
+                category: .caches,
+                title: "iPhone 16 Pro simulator",
+                detail: "iOS 18.2 · Shutdown. Simulator data: apps, settings and files. Deleting frees the space immediately; Xcode can create a new one.",
+                impactLabel: "2.8 GB",
+                impactBytes: 2_800_000_000,
+                risk: .caution,
+                action: .deleteSimulator(
+                    udid: udid,
+                    name: "iPhone 16 Pro",
+                    path: devicePath,
+                    bytes: 2_800_000_000
+                ),
+                evidence: devicePath
+            )
+        ]
+    }
+
     private static func demoRemainder(
         _ name: String,
         bytes: Int64,

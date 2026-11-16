@@ -55,6 +55,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AppState.shared.loadDemoReport()
             DashboardWindowController.shared.show(state: AppState.shared)
 
+            if arguments.contains("--demo-simulators") {
+                AppState.shared.addDemoSimulatorItems()
+            }
             if arguments.contains("--demo-access") {
                 AppState.shared.presentAccessSheet()
             }

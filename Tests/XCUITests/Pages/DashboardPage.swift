@@ -59,7 +59,7 @@ struct DashboardPage {
 
     /// The key numbers every report must show.
     func verifyOverviewStats() {
-        base.require(base.textContaining("Found 24 items"), timeout: 10)
+        base.require(base.textContaining("Found 25 items"), timeout: 10)
         base.require(base.textContaining("Findings"), timeout: 5)
         base.require(base.textContaining("Need review"), timeout: 5)
         base.require(base.textContaining("Disk available"), timeout: 5)

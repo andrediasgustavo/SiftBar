@@ -1,0 +1,13 @@
+# Mutation testing config for the manual Nightly workflow.
+#
+# Muter only runs on a copy of the project and is never part of the PR gate.
+# It uses SwiftPM because the unit suite is enough for the safety-critical
+# modules; UI tests are excluded from mutation runs.
+executable: /usr/bin/swift
+arguments:
+  - test
+  - --parallel
+exclude:
+  - /Tests/
+  - /UI/
+testSuiteTimeout: 900

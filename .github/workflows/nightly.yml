@@ -1,0 +1,115 @@
+name: Nightly
+
+# Slow, destructive and compatibility checks live here, not in the PR gate.
+# The ephemeral runner makes the destructive tests safe: they only create and
+# remove simulator/cache/leftover fixtures with a Nightly prefix.
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    name: Full suite and destructive integration
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Unit tests and real actions
+        env:
+          SIFTBAR_NIGHTLY: "1"
+        run: ./scripts/test.sh
+
+      - name: Install and upgrade shape
+        run: ./scripts/nightly-install-check.sh v0.6.0
+
+      - name: Install XcodeGen
+        run: command -v xcodegen >/dev/null || brew install xcodegen
+
+      - name: UI suite
+        run: |
+          xcodegen generate
+          xcodebuild test \
+            -project SiftBar.xcodeproj \
+            -scheme SiftBar \
+            -destination 'platform=macOS' \
+            -resultBundlePath build/UI.xcresult
+
+      - name: Upload UI results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nightly-UI-xcresult
+          path: build/UI.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
+
+  intel:
+    # Experimental until the macos-15-intel label is part of the supported
+    # matrix. Kept non-blocking so an image change cannot fail the whole run.
+    name: Intel compatibility (non-blocking)
+    runs-on: macos-15-intel
+    continue-on-error: true
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          swift --version
+          uname -m
+
+      - name: Build universal release
+        run: ARCHS="arm64 x86_64" ./scripts/build.sh release
+
+      - name: Unit tests
+        run: ./scripts/test.sh
+
+  mutation:
+    # Manual only: mutation testing is slow and needs a full Xcode/SwiftPM
+    # toolchain. Run it before a major release, not on every night.
+    name: Mutation testing (manual)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-15
+    continue-on-error: true
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Muter
+        run: brew install muter-mutation-testing/formulae/muter
+
+      - name: Run Muter on safety-critical files
+        run: |
+          muter --skip-update-check \
+            --files-to-mutate "Sources/SiftBar/Actions/ActionExecutor.swift,Sources/SiftBar/Actions/CleanupWhitelist.swift,Sources/SiftBar/Actions/ProcessSafety.swift" \
+            --output muter-report.json
+
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: muter-report
+          path: muter-report.json
+          if-no-files-found: ignore
+          retention-days: 30

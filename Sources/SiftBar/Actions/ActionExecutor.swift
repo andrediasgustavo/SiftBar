@@ -169,7 +169,10 @@ enum ActionExecutor {
         items.count == 1 ? "Review 1 Action" : "Review \(items.count) Actions"
     }
 
-    static func perform(_ item: ScanItem) async -> ActionReport {
+    static func perform(
+        _ item: ScanItem,
+        executor: any CommandExecuting = SystemCommandExecutor()
+    ) async -> ActionReport {
         // Low-confidence leftovers are deliberately read-only: SiftBar could
         // not prove the app that owns the data is gone, so the user must
         // inspect the folder in Finder first.
@@ -189,7 +192,7 @@ enum ActionExecutor {
             // PID reuse guard: the PID was captured during the scan, and macOS
             // may have recycled it for a different process. Verify that it
             // still belongs to the expected executable before sending a signal.
-            let probe = try? await CommandRunner.run(
+            let probe = try? await executor.run(
                 "/bin/ps",
                 arguments: ["-p", String(pid), "-o", "comm="],
                 timeout: 5
@@ -224,7 +227,8 @@ enum ActionExecutor {
                 item,
                 executable: "/bin/kill",
                 arguments: ["-TERM", String(pid)],
-                successMessage: "Quit \(name)."
+                successMessage: "Quit \(name).",
+                executor: executor
             )
 
         case .disableLaunchItem(let label):
@@ -232,7 +236,7 @@ enum ActionExecutor {
 
             // `bootout` fails when the item is not currently loaded; that is
             // fine, the `disable` below is what prevents it from loading again.
-            _ = try? await CommandRunner.run(
+            _ = try? await executor.run(
                 "/bin/launchctl",
                 arguments: ["bootout", "\(domain)/\(label)"],
                 timeout: 10
@@ -242,7 +246,8 @@ enum ActionExecutor {
                 item,
                 executable: "/bin/launchctl",
                 arguments: ["disable", "\(domain)/\(label)"],
-                successMessage: "Disabled \(label)."
+                successMessage: "Disabled \(label).",
+                executor: executor
             )
 
         case .stopService(let name):
@@ -255,7 +260,8 @@ enum ActionExecutor {
                 executable: brew,
                 arguments: ["services", "stop", name],
                 timeout: 30,
-                successMessage: "Stopped \(name)."
+                successMessage: "Stopped \(name).",
+                executor: executor
             )
 
         case .enableLaunchItem(let label):
@@ -265,7 +271,8 @@ enum ActionExecutor {
                 item,
                 executable: "/bin/launchctl",
                 arguments: ["enable", "\(domain)/\(label)"],
-                successMessage: "Enabled \(label)."
+                successMessage: "Enabled \(label).",
+                executor: executor
             )
             guard enabled.success else { return enabled }
 
@@ -275,7 +282,7 @@ enum ActionExecutor {
                     .appendingPathComponent("\(label).plist")
 
                 if FileManager.default.fileExists(atPath: plist.path) {
-                    _ = try? await CommandRunner.run(
+                    _ = try? await executor.run(
                         "/bin/launchctl",
                         arguments: ["bootstrap", domain, plist.path],
                         timeout: 10
@@ -367,7 +374,8 @@ enum ActionExecutor {
                 executable: "/usr/bin/xcrun",
                 arguments: ["simctl", "delete", udid],
                 timeout: 30,
-                successMessage: "Deleted \(name). Xcode can create a new simulator."
+                successMessage: "Deleted \(name). Xcode can create a new simulator.",
+                executor: executor
             )
 
         case .deleteUnavailableSimulators(let count):
@@ -376,7 +384,8 @@ enum ActionExecutor {
                 executable: "/usr/bin/xcrun",
                 arguments: ["simctl", "delete", "unavailable"],
                 timeout: 60,
-                successMessage: "Deleted \(count) unavailable simulators."
+                successMessage: "Deleted \(count) unavailable simulators.",
+                executor: executor
             )
         }
     }
@@ -407,10 +416,11 @@ enum ActionExecutor {
         executable: String,
         arguments: [String],
         timeout: TimeInterval = 10,
-        successMessage: String
+        successMessage: String,
+        executor: any CommandExecuting
     ) async -> ActionReport {
         do {
-            let result = try await CommandRunner.run(executable, arguments: arguments, timeout: timeout)
+            let result = try await executor.run(executable, arguments: arguments, timeout: timeout)
 
             if result.exitCode == 0 {
                 return ActionReport(item: item, success: true, message: successMessage)
