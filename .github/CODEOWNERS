@@ -1,0 +1,21 @@
+# Light ownership: GitHub requests a review from the owner when a PR touches
+# the quality gate or a destructive path. Branch protection (run
+# scripts/apply-branch-protection.sh) enforces the required CI checks; code
+# owner approval stays optional for this single-maintainer repository.
+
+# Quality gates and tests
+/Tests/                          @andrediasgustavo
+/.github/                        @andrediasgustavo
+/scripts/                        @andrediasgustavo
+/Package.swift                   @andrediasgustavo
+/Package.resolved                @andrediasgustavo
+/project.yml                     @andrediasgustavo
+/muter.conf.yml                  @andrediasgustavo
+/Resources/Info.plist            @andrediasgustavo
+
+# Destructive actions and permission boundaries
+/Sources/SiftBar/Actions/        @andrediasgustavo
+/Sources/SiftBar/Infrastructure/CommandRunner.swift @andrediasgustavo
+/Sources/SiftBar/Infrastructure/CommandExecuting.swift @andrediasgustavo
+/Sources/SiftBar/Infrastructure/PrivacyAccess.swift @andrediasgustavo
+/Sources/SiftBar/Collectors/SimulatorCollector.swift @andrediasgustavo

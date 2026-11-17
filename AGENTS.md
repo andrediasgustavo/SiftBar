@@ -25,6 +25,14 @@ Estas regras valem para qualquer agente que trabalhe neste repositório.
 - O hook de pre-commit roda só `./scripts/test.sh` (unit). XCUITest fica no
   CI/nightly ou pode ser rodado manualmente com `./scripts/check.sh`.
 - O gate completo (unit + XCUITest) precisa estar verde antes de merge/release.
+- **Nunca enfraqueça ou apague testes/gates para fazer o CI passar.** Não apague, ignore,
+  reescreva ou afrouxe testes, workflows, `scripts/check.sh`, `scripts/test.sh`
+  ou whitelists para obter verde. Mudanças em `Tests/`, `.github/`, `scripts/`,
+  `Package.swift`, `project.yml` e `Resources/Info.plist` exigem pedido
+  explícito e revisão humana.
+- **Sem dependências externas sem aprovação.** O app não tem pacotes Swift
+  externos; `scripts/check-dependencies.sh` precisa passar. Não adicione
+  `.package(...)` nem `Package.resolved` por conta própria.
 - Testes de UI usam Page Objects (`Tests/XCUITests/Pages`) e accessibility IDs;
   não reintroduza testes baseados em OCR.
 - Atualize `HANDOFF.md`/`CONTEXT.md` (locais, ignorados pelo git) a cada

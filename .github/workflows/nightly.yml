@@ -24,7 +24,9 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Show toolchain
         run: |
@@ -52,7 +54,7 @@ jobs:
 
       - name: Upload nightly test log
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Nightly-tests-log
           path: nightly-tests.log
@@ -76,7 +78,7 @@ jobs:
 
       - name: Upload UI results
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: Nightly-UI-xcresult
           path: build/UI.xcresult
@@ -93,7 +95,9 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Show toolchain
         run: |
@@ -112,12 +116,13 @@ jobs:
     name: Mutation testing (manual)
     if: github.event_name == 'workflow_dispatch'
     runs-on: macos-15
-    continue-on-error: true
     timeout-minutes: 120
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Install Muter
         run: brew install muter-mutation-testing/formulae/muter
@@ -132,9 +137,12 @@ jobs:
             --files-to-mutate "Sources/SiftBar/Actions/CleanupWhitelist.swift,Sources/SiftBar/Actions/ProcessSafety.swift" \
             --output muter-report.txt
 
+      - name: Fail on surviving mutants
+        run: ./scripts/check-mutation-report.sh muter-report.txt
+
       - name: Upload mutation report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: muter-report
           path: muter-report.txt

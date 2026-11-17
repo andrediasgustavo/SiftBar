@@ -12,10 +12,6 @@ on:
       - "**/*.md"
       - "LICENSE"
   pull_request:
-    paths-ignore:
-      - "docs/**"
-      - "**/*.md"
-      - "LICENSE"
   workflow_dispatch:
 
 permissions:
@@ -33,7 +29,9 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Show toolchain
         run: |
@@ -59,7 +57,9 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Validate shell scripts
         run: |
@@ -70,6 +70,9 @@ jobs:
 
       - name: Validate Info.plist
         run: plutil -lint Resources/Info.plist
+
+      - name: Check dependency policy
+        run: ./scripts/check-dependencies.sh
 
       - name: Build app bundle
         run: ./scripts/build.sh release
@@ -99,7 +102,7 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$MOUNT/SiftBar.app"
 
       - name: Upload app artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: SiftBar-${{ github.sha }}
           path: |
@@ -118,7 +121,9 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Install XcodeGen
         run: command -v xcodegen >/dev/null || brew install xcodegen
@@ -157,7 +162,7 @@ jobs:
 
       - name: Upload UI test results
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: SiftBar-UI-xcresult
           path: build/UI.xcresult
